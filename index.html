@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screen & Camera Recorder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for specific elements not easily done with direct Tailwind classes */
+        body {
+            font-family: "Inter", sans-serif;
+        }
+
+        /* Ensure canvas fills its parent and maintains aspect ratio */
+        #mainCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Custom styling for the circular camera overlay appearance */
+        .camera-overlay-hidden {
+            display: none; /* This video element is only used as a source for drawing on canvas */
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen flex items-center justify-center p-4 sm:p-6 md:p-8">
+    <div class="container bg-white p-6 sm:p-8 md:p-10 rounded-2xl shadow-xl text-center w-full max-w-5xl border border-gray-200">
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-6 sm:mb-8">Screen & Camera Recorder</h1>
+
+        <div class="video-container relative w-full aspect-video bg-gray-900 rounded-xl overflow-hidden mb-6 sm:mb-8 md:mb-10 shadow-inner border border-gray-700">
+            <!-- Canvas for combined screen and camera preview -->
+            <canvas id="mainCanvas" class="rounded-lg"></canvas>
+            <!-- Hidden video element to hold camera stream for drawing -->
+            <video id="cameraSource" autoplay muted playsinline class="camera-overlay-hidden"></video>
+            <!-- Hidden video element to hold screen stream for drawing -->
+            <video id="screenSource" autoplay muted playsinline style="display: none;"></video>
+        </div>
+
+        <div class="flex flex-col sm:flex-row justify-center gap-6 mb-4 items-center">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" id="micAudioToggle" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500" checked>
+                <span class="text-base text-gray-800">Include Microphone Audio</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" id="systemAudioToggle" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500" checked>
+                <span class="text-base text-gray-800">Include System Audio</span>
+            </label>
+        </div>
+
+        <div class="controls flex flex-col sm:flex-row justify-center gap-4 mb-6">
+            <button id="previewScreenButton" class="px-8 py-3 rounded-full font-bold text-lg text-white bg-yellow-500 hover:bg-yellow-600 focus:outline-none focus:ring-4 focus:ring-yellow-300 transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                Preview Screen
+            </button>
+            <button id="startButton" class="px-8 py-3 rounded-full font-bold text-lg text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-300 transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                Start Recording
+            </button>
+            <button id="stopButton" disabled class="px-8 py-3 rounded-full font-bold text-lg text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-4 focus:ring-red-300 transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:shadow-none disabled:transform-none">
+                Stop Recording
+            </button>
+            <button id="saveButton" disabled class="px-8 py-3 rounded-full font-bold text-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:shadow-none disabled:transform-none">
+                Save Recording
+            </button>
+        </div>
+
+        <p id="statusMessage" class="status-message mt-6 p-4 rounded-lg text-base font-medium transition-colors duration-300 ease-in-out
+            bg-blue-100 text-blue-800 border border-blue-200">
+            Click "Start Recording" to begin.
+        </p>
+
+        <div class="explanation mt-8 p-5 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg text-sm text-left shadow-sm">
+            <strong class="text-yellow-900 text-base">Important Notes:</strong>
+            <ul class="list-disc list-inside mt-2 space-y-1">
+                <li>This application creates a live preview on the canvas, combining your screen and camera.</li>
+                <li>The saved video file will be a recording of this canvas output (including the circular camera overlay).</li>
+                <li>The output format will be <strong>.webm</strong>.</li>
+                <li>Audio from both your screen (system audio) and camera (microphone audio) will be included. Depending on your browser and media player, these might appear as separate audio tracks or be mixed.</li>
+                <li>Performance can vary based on your system's capabilities due to real-time video processing.</li>
+                <li>Please grant permissions for screen sharing and camera/microphone access when prompted.</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Get DOM elements
+        const mainCanvas = document.getElementById('mainCanvas');
+        const cameraSource = document.getElementById('cameraSource');
+        const screenSource = document.getElementById('screenSource');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const saveButton = document.getElementById('saveButton');
+        const statusMessage = document.getElementById('statusMessage');
+        const previewScreenButton = document.getElementById('previewScreenButton');
+        const micAudioToggle = document.getElementById('micAudioToggle');
+        const systemAudioToggle = document.getElementById('systemAudioToggle');
+
+        const ctx = mainCanvas.getContext('2d');
+
+        let screenStream = null;
+        let cameraStream = null;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let animationFrameId = null;
+        let isRecording = false;
+        let isScreenPreviewing = false;
+        let isCameraPreviewing = false;
+
+        // Function to update status messages
+        function updateStatus(message, type = 'info') {
+            statusMessage.textContent = message;
+            // Remove previous type classes and add the new one
+            statusMessage.classList.remove('bg-blue-100', 'text-blue-800', 'border-blue-200', 'bg-red-100', 'text-red-800', 'border-red-200', 'bg-green-100', 'text-green-800', 'border-green-200');
+            if (type === 'info') {
+                statusMessage.classList.add('bg-blue-100', 'text-blue-800', 'border-blue-200');
+            } else if (type === 'error') {
+                statusMessage.classList.add('bg-red-100', 'text-red-800', 'border-red-200');
+            } else if (type === 'success') {
+                statusMessage.classList.add('bg-green-100', 'text-green-800', 'border-green-200');
+            }
+        }
+
+        // Function to draw frames onto the canvas
+        function drawFrame() {
+            // Set canvas size
+            if (screenSource.srcObject && screenSource.videoWidth && screenSource.videoHeight) {
+                mainCanvas.width = screenSource.videoWidth;
+                mainCanvas.height = screenSource.videoHeight;
+            } else {
+                mainCanvas.width = 1280;
+                mainCanvas.height = 720;
+            }
+            // Draw background if no screen preview
+            if (!screenSource.srcObject) {
+                ctx.fillStyle = '#1e293b'; // Tailwind slate-800
+                ctx.fillRect(0, 0, mainCanvas.width, mainCanvas.height);
+            } else {
+                ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+            }
+            // Draw screen if previewing or recording
+            if (screenSource.srcObject && screenSource.readyState >= HTMLMediaElement.HAVE_METADATA && !screenSource.paused) {
+                ctx.drawImage(screenSource, 0, 0, mainCanvas.width, mainCanvas.height);
+            } else if (screenSource.srcObject && (screenSource.paused || screenSource.readyState < HTMLMediaElement.HAVE_METADATA)) {
+                // Debug overlay if screen is not available
+                ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                ctx.font = '24px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Screen not available', mainCanvas.width / 2, mainCanvas.height / 2);
+            }
+            // Draw camera overlay if previewing or recording
+            if (cameraSource.srcObject && cameraSource.readyState >= HTMLMediaElement.HAVE_METADATA && !cameraSource.paused) {
+                // Overlay size and position are always relative to the minimum canvas dimension
+                const minDim = Math.min(mainCanvas.width, mainCanvas.height);
+                const overlaySize = minDim * 0.2; // 20% of the smallest dimension
+                const padding = minDim * 0.03;   // 3% padding from the edge
+                // Lower left corner (x from left, y from bottom)
+                const x = padding;
+                const y = mainCanvas.height - overlaySize - padding;
+                // Crop camera to centered square to avoid warping
+                const videoW = cameraSource.videoWidth;
+                const videoH = cameraSource.videoHeight;
+                const side = Math.min(videoW, videoH);
+                const sx = (videoW - side) / 2;
+                const sy = (videoH - side) / 2;
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(x + overlaySize / 2, y + overlaySize / 2, overlaySize / 2, 0, Math.PI * 2, false);
+                ctx.closePath();
+                ctx.clip();
+                ctx.drawImage(cameraSource, sx, sy, side, side, x, y, overlaySize, overlaySize);
+                ctx.restore();
+            } else if (!cameraSource.srcObject) {
+                // Debug overlay if camera is not available
+                ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                ctx.font = '24px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Camera not available', mainCanvas.width / 2, mainCanvas.height / 2);
+            }
+            // Always loop for preview or recording
+            animationFrameId = requestAnimationFrame(drawFrame);
+        }
+
+        // Camera preview on page load
+        async function startCameraPreview() {
+            if (isCameraPreviewing) return;
+            try {
+                const micEnabled = micAudioToggle.checked;
+                cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: micEnabled });
+                cameraSource.srcObject = cameraStream;
+                isCameraPreviewing = true;
+                updateStatus("Camera preview enabled. You can also preview your screen.", "info");
+                // Ensure video is playing before starting draw loop
+                cameraSource.onloadedmetadata = async () => {
+                    try {
+                        await cameraSource.play();
+                    } catch (e) {}
+                    if (!animationFrameId) drawFrame();
+                };
+                // Fallback: if already ready, start draw loop
+                if (cameraSource.readyState >= HTMLMediaElement.HAVE_METADATA) {
+                    try {
+                        await cameraSource.play();
+                    } catch (e) {}
+                    if (!animationFrameId) drawFrame();
+                }
+            } catch (err) {
+                updateStatus(`Camera error: ${err.name} - ${err.message}`, "error");
+            }
+        }
+
+        // Screen preview on button click
+        async function startScreenPreview() {
+            if (isScreenPreviewing) return;
+            updateStatus("Requesting screen preview...", "info");
+            try {
+                const systemAudioEnabled = systemAudioToggle.checked;
+                screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { mediaSource: "screen" }, audio: systemAudioEnabled });
+                screenSource.srcObject = screenStream;
+                isScreenPreviewing = true;
+                // Ensure video is playing before drawing
+                screenSource.onloadedmetadata = async () => {
+                    try {
+                        await screenSource.play();
+                    } catch (e) {}
+                    if (!animationFrameId) drawFrame();
+                };
+                if (screenSource.readyState >= HTMLMediaElement.HAVE_METADATA) {
+                    try {
+                        await screenSource.play();
+                    } catch (e) {}
+                    if (!animationFrameId) drawFrame();
+                }
+                updateStatus("Screen preview enabled. You can now record.", "success");
+                // When screen sharing ends, reset preview
+                screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+                    screenSource.srcObject = null;
+                    screenStream = null;
+                    isScreenPreviewing = false;
+                    updateStatus("Screen preview ended.", "info");
+                });
+            } catch (err) {
+                updateStatus(`Screen preview error: ${err.name} - ${err.message}`, "error");
+            }
+        }
+
+        // Start recording function
+        async function startRecording() {
+            updateStatus("Preparing to record...", "info");
+            try {
+                const micEnabled = micAudioToggle.checked;
+                const systemAudioEnabled = systemAudioToggle.checked;
+                // If not already previewing, request streams
+                if (!screenStream) {
+                    screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { mediaSource: "screen" }, audio: systemAudioEnabled });
+                    screenSource.srcObject = screenStream;
+                    isScreenPreviewing = true;
+                }
+                if (!cameraStream) {
+                    cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: micEnabled });
+                    cameraSource.srcObject = cameraStream;
+                    isCameraPreviewing = true;
+                }
+                if (!animationFrameId) drawFrame();
+                const canvasStream = mainCanvas.captureStream(30);
+                // Add audio tracks from screen and camera if enabled
+                if (systemAudioEnabled && screenStream) screenStream.getAudioTracks().forEach(track => { if (track) canvasStream.addTrack(track); });
+                if (micEnabled && cameraStream) cameraStream.getAudioTracks().forEach(track => { if (track) canvasStream.addTrack(track); });
+                recordedChunks = [];
+                const mimeType = MediaRecorder.isTypeSupported('video/webm; codecs="vp8, opus"') ? 'video/webm; codecs="vp8, opus"' : 'video/webm';
+                mediaRecorder = new MediaRecorder(canvasStream, { mimeType });
+                mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) recordedChunks.push(event.data); };
+                mediaRecorder.onstop = () => {
+                    saveButton.disabled = false;
+                    updateStatus("Recording stopped. Click 'Save Recording' to download.", "info");
+                    if (screenStream) screenStream.getTracks().forEach(track => track.stop());
+                    if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+                    screenSource.srcObject = null;
+                    cameraSource.srcObject = null;
+                    isScreenPreviewing = false;
+                    isCameraPreviewing = false;
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                };
+                mediaRecorder.start();
+                updateStatus("Recording in progress...", "success");
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                saveButton.disabled = true;
+                previewScreenButton.disabled = true;
+                isRecording = true;
+            } catch (err) {
+                updateStatus(`Recording error: ${err.name} - ${err.message}`, "error");
+                startButton.disabled = false;
+                stopButton.disabled = true;
+                saveButton.disabled = true;
+                previewScreenButton.disabled = false;
+                if (screenStream) screenStream.getTracks().forEach(track => track.stop());
+                if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+        }
+
+        // Stop recording function
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                startButton.disabled = false;
+                stopButton.disabled = true;
+                previewScreenButton.disabled = false;
+                isRecording = false;
+            }
+        }
+
+        // Save recording function
+        function saveRecording() {
+            if (recordedChunks.length === 0) {
+                updateStatus("No recording to save.", "error");
+                return;
+            }
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `combined_recording_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.webm`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url); // Clean up the URL
+            console.log("Recording saved.");
+            updateStatus("Recording saved successfully!", "success");
+
+            // Reset for next recording
+            recordedChunks = [];
+            saveButton.disabled = true;
+        }
+
+        // Event Listeners
+        previewScreenButton.addEventListener('click', startScreenPreview);
+        startButton.addEventListener('click', startRecording);
+        stopButton.addEventListener('click', stopRecording);
+        saveButton.addEventListener('click', saveRecording);
+
+        // Camera preview on page load
+        startCameraPreview();
+
+        // Initial setup for canvas size
+        mainCanvas.width = 1280;
+        mainCanvas.height = 720;
+        updateStatus("Ready to record. Preview your camera or screen.", "info");
+
+        // Add a resize observer to keep the canvas responsive
+        const resizeObserver = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                if (entry.target === mainCanvas.parentElement) {
+                    // Only adjust if the screen stream is not active, otherwise,
+                    // the canvas dimensions are driven by screenSource.videoWidth/Height in drawFrame
+                    if (!screenSource.srcObject) {
+                        mainCanvas.width = entry.contentRect.width;
+                        mainCanvas.height = entry.contentRect.width / (16 / 9); // Maintain 16:9 aspect ratio
+                        drawFrame(); // Redraw to clear and set new dimensions
+                    }
+                }
+            }
+        });
+        resizeObserver.observe(mainCanvas.parentElement); // Observe the parent container for resizing
+    </script>
+</body>
+</html>
