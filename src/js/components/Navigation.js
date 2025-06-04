@@ -16,6 +16,9 @@ export class Navigation {
             pulseEffect: false
         };
         
+        // Add click outside handler reference
+        this.clickOutsideHandler = null;
+        
         this.createNavigation();
         this.setupEventListeners();
     }
@@ -110,15 +113,36 @@ export class Navigation {
         const strokeToggle = document.getElementById('strokeToggle');
         const pulseEffectToggle = document.getElementById('pulseEffectToggle');
 
-        // Toggle settings popover
+        // Toggle settings popover with improved click outside handling
         settingsButton.addEventListener('click', (e) => {
             e.stopPropagation();
-            settingsPopover.classList.toggle('hidden');
-        });
+            const isVisible = !settingsPopover.classList.contains('hidden');
+            
+            // Remove existing click outside handler if any
+            if (this.clickOutsideHandler) {
+                document.removeEventListener('click', this.clickOutsideHandler);
+                this.clickOutsideHandler = null;
+            }
 
-        // Close popover when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!settingsPopover.contains(e.target) && e.target !== settingsButton) {
+            if (!isVisible) {
+                // Show popover
+                settingsPopover.classList.remove('hidden');
+                
+                // Create new click outside handler
+                this.clickOutsideHandler = (event) => {
+                    if (!settingsPopover.contains(event.target) && event.target !== settingsButton) {
+                        settingsPopover.classList.add('hidden');
+                        document.removeEventListener('click', this.clickOutsideHandler);
+                        this.clickOutsideHandler = null;
+                    }
+                };
+                
+                // Add click outside handler after current event loop
+                requestAnimationFrame(() => {
+                    document.addEventListener('click', this.clickOutsideHandler);
+                });
+            } else {
+                // Hide popover
                 settingsPopover.classList.add('hidden');
             }
         });
@@ -154,6 +178,12 @@ export class Navigation {
      * Cleans up event listeners
      */
     cleanup() {
+        // Remove click outside handler if it exists
+        if (this.clickOutsideHandler) {
+            document.removeEventListener('click', this.clickOutsideHandler);
+            this.clickOutsideHandler = null;
+        }
+
         // Remove event listeners and elements
         const settingsButton = document.getElementById('settingsButton');
         const settingsPopover = document.getElementById('settingsPopover');

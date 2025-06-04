@@ -1,0 +1,251 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles */
+@layer base {
+  :root {
+    --primary: #0E71EB;
+    --primary-dark: #0B5BC4;
+    --danger: #DC2626;
+    --success: #059669;
+    --background: #1A1A1A;
+    --surface: #2D2D2D;
+    --text: #FFFFFF;
+    --text-secondary: #A3A3A3;
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--background);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* Move all custom styles from index.html here */
+@layer components {
+  .canvas-container {
+    @apply relative w-full bg-surface rounded-xl overflow-hidden;
+    aspect-ratio: 16/9;
+    min-height: 0; /* Remove min-height to allow aspect ratio to control dimensions */
+    position: relative;
+  }
+
+  #mainCanvas {
+    @apply absolute top-0 left-0 w-full h-full z-[1];
+    aspect-ratio: 16/9;
+  }
+
+  #screenSource, #cameraSource {
+    @apply absolute top-0 left-0 w-full h-full object-contain z-0;
+    display: none !important; /* Override any inline styles */
+  }
+
+  #screenSource.active {
+    @apply block z-[1];
+    display: block !important;
+  }
+
+  #cameraSource.active {
+    @apply block z-[2] cursor-move;
+    display: block !important;
+    position: absolute;
+    width: 320px !important;
+    height: 180px !important;
+    aspect-ratio: 16/9;
+    border: 2px solid var(--surface);
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    background-color: var(--surface);
+    transition: box-shadow 0.2s ease;
+  }
+
+  #cameraSource.active:hover {
+    box-shadow: 0 8px 12px -1px rgb(0 0 0 / 0.2), 0 4px 6px -2px rgb(0 0 0 / 0.2);
+  }
+
+  .camera-resize-handle {
+    @apply absolute bottom-0 right-0 w-4 h-4 cursor-se-resize;
+    background: linear-gradient(135deg, transparent 50%, var(--surface) 50%);
+    border: 2px solid var(--surface);
+    border-radius: 0 0 4px 0;
+  }
+
+  .camera-resize-handle:hover {
+    background: linear-gradient(135deg, transparent 50%, var(--primary) 50%);
+    border-color: var(--primary);
+  }
+
+  /* When both screen and camera are active, style camera as overlay */
+  #screenSource.active + #cameraSource.active {
+    @apply rounded-lg object-cover;
+    top: 1rem;
+    left: 1rem;
+    min-width: 160px;
+    min-height: 90px;
+    max-width: calc(100% - 2rem);
+    max-height: calc(100% - 2rem);
+  }
+
+  /* Ensure camera stays within canvas bounds */
+  .canvas-container {
+    @apply relative w-full bg-surface rounded-xl overflow-hidden;
+    aspect-ratio: 16/9;
+    min-height: 0;
+    position: relative;
+  }
+
+  /* Add resize handle styling */
+  #cameraSource.active::after {
+    content: '';
+    @apply absolute bottom-0 right-0 w-4 h-4 cursor-se-resize;
+    background: linear-gradient(135deg, transparent 50%, var(--surface) 50%);
+  }
+
+  .control-button {
+    @apply w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 bg-surface text-text border-none cursor-pointer;
+  }
+
+  .control-button:hover {
+    @apply bg-white/10 scale-105;
+  }
+
+  .control-button.active {
+    @apply bg-danger text-white;
+  }
+
+  .control-button.toggle-active {
+    @apply text-text;
+  }
+
+  .control-button.toggle-inactive {
+    @apply text-text-secondary;
+  }
+
+  .control-button:disabled {
+    @apply opacity-50 cursor-not-allowed scale-100;
+  }
+
+  .control-button svg {
+    @apply w-6 h-6;
+  }
+
+  /* Notification styles */
+  .notification {
+    @apply fixed top-0 left-1/2 transform -translate-x-1/2 -translate-y-full z-50 
+           min-w-[300px] max-w-[90vw] bg-surface rounded-lg shadow-lg border border-gray-700
+           transition-all duration-300 ease-in-out opacity-0;
+  }
+
+  .notification.show {
+    @apply translate-y-4 opacity-100;
+  }
+
+  .notification-content {
+    @apply flex items-center gap-3 px-4 py-3;
+  }
+
+  .notification-icon {
+    @apply w-5 h-5 flex-shrink-0;
+  }
+
+  .notification-message {
+    @apply text-sm text-text flex-1;
+  }
+
+  .notification-close {
+    @apply absolute top-2 right-2 p-1 rounded-full hover:bg-white/10 
+           transition-colors duration-200 text-text-secondary hover:text-text;
+  }
+
+  .notification.info {
+    @apply border-blue-500/50;
+  }
+
+  .notification.info .notification-icon {
+    @apply text-blue-500;
+  }
+
+  .notification.error {
+    @apply border-red-500/50;
+  }
+
+  .notification.error .notification-icon {
+    @apply text-red-500;
+  }
+
+  .notification.success {
+    @apply border-green-500/50;
+  }
+
+  .notification.success .notification-icon {
+    @apply text-green-500;
+  }
+
+  /* Settings Popover Styles */
+  .toggle-switch {
+    @apply relative inline-flex items-center;
+  }
+
+  /* Range Input Styling */
+  input[type="range"] {
+    @apply appearance-none bg-gray-600 h-1 rounded-lg;
+    -webkit-appearance: none;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    @apply appearance-none w-4 h-4 bg-white rounded-full cursor-pointer border-2 border-primary;
+    -webkit-appearance: none;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    @apply w-4 h-4 bg-white rounded-full cursor-pointer border-2 border-primary border-none;
+  }
+
+  /* Color Input Styling */
+  input[type="color"] {
+    @apply appearance-none cursor-pointer;
+    -webkit-appearance: none;
+    padding: 0;
+  }
+
+  input[type="color"]::-webkit-color-swatch-wrapper {
+    @apply p-0;
+  }
+
+  input[type="color"]::-webkit-color-swatch {
+    @apply border-0 rounded;
+  }
+
+  input[type="color"]::-moz-color-swatch {
+    @apply border-0 rounded;
+  }
+
+  /* Settings Popover Animation */
+  #settingsPopover {
+    @apply transform transition-all duration-200 ease-in-out;
+  }
+
+  #settingsPopover.hidden {
+    @apply opacity-0 scale-95 pointer-events-none;
+  }
+
+  #settingsPopover:not(.hidden) {
+    @apply opacity-100 scale-100;
+  }
+
+  /* Stroke Options Animation */
+  #strokeOptions {
+    @apply transition-all duration-200 ease-in-out;
+  }
+
+  #strokeOptions:not(:has(#strokeToggle:checked)) {
+    @apply opacity-0 max-h-0 overflow-hidden;
+  }
+
+  #strokeOptions:has(#strokeToggle:checked) {
+    @apply opacity-100 max-h-48;
+  }
+} 

@@ -5,392 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Beam Stream - A modern web-based screen recording application">
     <title>Beam Stream</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --primary: #0E71EB;
-            --primary-dark: #0B5BC4;
-            --danger: #DC2626;
-            --success: #059669;
-            --background: #1A1A1A;
-            --surface: #2D2D2D;
-            --text: #FFFFFF;
-            --text-secondary: #A3A3A3;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--background);
-            color: var(--text);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .canvas-container {
-            position: relative;
-            width: 100%;
-            height: calc(100vh - 180px);
-            background-color: var(--surface);
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-
-        #mainCanvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 2;
-        }
-
-        #screenSource, #cameraSource {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            z-index: 1;
-            background-color: var(--surface);
-            display: none; /* Initially hidden, shown when streams are active */
-        }
-
-        #screenSource.active, #cameraSource.active {
-            display: block;
-        }
-
-        .control-button {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
-            background-color: var(--surface);
-            color: var(--text);
-            border: none;
-            cursor: pointer;
-        }
-
-        .control-button:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-            transform: scale(1.05);
-        }
-
-        .control-button.active {
-            background-color: var(--danger);
-            color: white;
-        }
-
-        .control-button.toggle-active {
-            color: var(--text);
-        }
-
-        .control-button.toggle-inactive {
-            color: var(--text-secondary);
-        }
-
-        .control-button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .control-button svg {
-            width: 24px;
-            height: 24px;
-        }
-
-        .info-button {
-            position: relative;
-        }
-
-        .info-popover {
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: var(--surface);
-            border-radius: 8px;
-            padding: 16px;
-            width: 300px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            margin-bottom: 8px;
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.2s ease;
-        }
-
-        .info-button:hover .info-popover {
-            opacity: 1;
-            visibility: visible;
-        }
-
-        .info-popover::after {
-            content: '';
-            position: absolute;
-            top: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            border-width: 8px;
-            border-style: solid;
-            border-color: var(--surface) transparent transparent transparent;
-        }
-
-        .checkbox-wrapper {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px;
-            border-radius: 6px;
-            transition: background-color 0.2s ease;
-            cursor: pointer;
-        }
-
-        .checkbox-wrapper:hover {
-            background-color: rgba(255, 255, 255, 0.05);
-        }
-
-        .custom-checkbox {
-            width: 18px;
-            height: 18px;
-            border: 2px solid var(--text-secondary);
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
-            flex-shrink: 0;
-        }
-
-        .custom-checkbox.checked {
-            background-color: var(--primary);
-            border-color: var(--primary);
-        }
-
-        .custom-checkbox svg {
-            width: 12px;
-            height: 12px;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-
-        .custom-checkbox.checked svg {
-            opacity: 1;
-        }
-
-        input[type="checkbox"] {
-            display: none;
-        }
-
-        .status-message {
-            display: none;
-        }
-
-        /* Notification styles */
-        .notification {
-            position: fixed;
-            top: -100px; /* Start off-screen */
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: var(--surface);
-            border-radius: 8px;
-            padding: 12px 16px;
-            min-width: 300px;
-            max-width: 90%;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            z-index: 1000;
-            transition: top 0.3s ease-in-out;
-        }
-
-        .notification.show {
-            top: 20px;
-        }
-
-        .notification-content {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex: 1;
-        }
-
-        .notification-icon {
-            width: 20px;
-            height: 20px;
-            flex-shrink: 0;
-        }
-
-        .notification-message {
-            font-size: 14px;
-            color: var(--text);
-            margin: 0;
-        }
-
-        .notification-close {
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            cursor: pointer;
-            padding: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 4px;
-            transition: all 0.2s ease;
-        }
-
-        .notification-close:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-            color: var(--text);
-        }
-
-        .notification.success {
-            border-left: 4px solid var(--success);
-        }
-
-        .notification.error {
-            border-left: 4px solid var(--danger);
-        }
-
-        .notification.info {
-            border-left: 4px solid var(--primary);
-        }
-
-        /* Range input styling */
-        input[type="range"] {
-            -webkit-appearance: none;
-            appearance: none;
-            background: var(--surface);
-            border-radius: 4px;
-            height: 4px;
-            outline: none;
-            width: 100%;
-        }
-
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 16px;
-            height: 16px;
-            background: var(--primary);
-            border-radius: 50%;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        input[type="range"]::-webkit-slider-thumb:hover {
-            transform: scale(1.1);
-        }
-
-        input[type="range"]::-moz-range-thumb {
-            width: 16px;
-            height: 16px;
-            background: var(--primary);
-            border-radius: 50%;
-            cursor: pointer;
-            border: none;
-            transition: all 0.2s ease;
-        }
-
-        input[type="range"]::-moz-range-thumb:hover {
-            transform: scale(1.1);
-        }
-
-        /* Color input styling */
-        input[type="color"] {
-            -webkit-appearance: none;
-            appearance: none;
-            padding: 0;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            width: 32px;
-            height: 32px;
-        }
-
-        input[type="color"]::-webkit-color-swatch-wrapper {
-            padding: 0;
-        }
-
-        input[type="color"]::-webkit-color-swatch {
-            border: none;
-            border-radius: 4px;
-        }
-
-        input[type="color"]::-moz-color-swatch {
-            border: none;
-            border-radius: 4px;
-        }
-
-        /* Camera toggle specific styles */
-        .control-button.toggle-active .camera-icon {
-            color: var(--text);
-        }
-
-        .control-button.toggle-inactive .camera-icon {
-            color: var(--text-secondary);
-            opacity: 0.7;
-        }
-
-        /* Record button specific styles */
-        .control-button.active .record-icon {
-            color: var(--danger);
-        }
-
-        .control-button.active .stop-icon {
-            color: var(--danger);
-        }
-
-        /* Toggle button specific styles */
-        .control-button.toggle-active {
-            color: var(--text);
-        }
-
-        .control-button.toggle-inactive {
-            color: var(--text-secondary);
-        }
-
-        .control-button.toggle-active i {
-            color: var(--text);
-        }
-
-        .control-button.toggle-inactive i {
-            color: var(--text-secondary);
-        }
-
-        .control-button.toggle-active .mic-icon,
-        .control-button.toggle-active .speaker-icon,
-        .control-button.toggle-active .camera-icon {
-            color: var(--text);
-        }
-
-        .control-button.toggle-inactive .mic-icon,
-        .control-button.toggle-inactive .speaker-icon,
-        .control-button.toggle-inactive .camera-icon,
-        .control-button.toggle-inactive .camera-off-icon {
-            color: var(--text-secondary);
-        }
-
-        #settingsPopover {
-            background-color: var(--surface);
-            border: 1px solid var(--text-secondary);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-
-        #settingsPopover .px-4 {
-            background-color: var(--surface);
-        }
-    </style>
+    <link href="dist/styles.css" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
 <body class="p-6">
     <div class="max-w-7xl mx-auto w-full flex flex-col h-full gap-6">
@@ -413,7 +30,7 @@
                     <button id="systemAudioToggle" class="control-button toggle-active" title="Toggle System Audio">
                         <i data-lucide="speaker" class="w-6 h-6"></i>
                     </button>
-                </div>
+        </div>
 
                 <!-- Camera controls -->
                 <div class="flex items-center gap-2 pr-4 border-r border-gray-700">
@@ -421,80 +38,94 @@
                         <i data-lucide="video" class="w-6 h-6 camera-icon"></i>
                         <i data-lucide="video-off" class="w-6 h-6 camera-off-icon hidden"></i>
                     </button>
-                </div>
+        </div>
 
                 <!-- Recording controls -->
                 <div class="flex items-center gap-4">
                     <button id="previewScreenButton" class="control-button" title="Preview Screen">
                         <i data-lucide="monitor" class="w-6 h-6"></i>
-                    </button>
+            </button>
                     <button id="recordButton" class="control-button" title="Start Recording">
                         <i data-lucide="circle-dot" class="w-6 h-6 record-icon"></i>
                         <i data-lucide="square" class="w-6 h-6 stop-icon hidden"></i>
-                    </button>
+            </button>
                     <button id="saveButton" class="control-button" disabled title="Save Recording">
                         <i data-lucide="save" class="w-6 h-6"></i>
-                    </button>
-                    <button id="settingsButton" class="control-button" title="Settings">
-                        <i data-lucide="settings" class="w-6 h-6"></i>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Settings Popover -->
-            <div id="settingsPopover" class="hidden fixed bottom-24 left-1/2 transform -translate-x-1/2 w-72 bg-surface rounded-lg shadow-lg border border-gray-700 py-2 z-50">
-                <div class="px-4 py-2 border-b border-gray-700">
-                    <h3 class="text-sm font-semibold text-white">Camera Effects</h3>
-                </div>
-                <div class="px-4 py-2 space-y-4">
-                    <!-- Drop Shadow Toggle -->
-                    <div class="checkbox-wrapper">
-                        <input type="checkbox" id="dropShadowToggle" class="form-checkbox" checked>
-                        <label for="dropShadowToggle" class="text-sm text-gray-300 cursor-pointer flex-1">Drop Shadow</label>
-                        <div class="custom-checkbox checked">
-                            <i data-lucide="check" class="w-4 h-4 text-white"></i>
-                        </div>
-                    </div>
-
-                    <!-- Stroke Toggle -->
-                    <div class="space-y-3">
-                        <div class="checkbox-wrapper">
-                            <input type="checkbox" id="strokeToggle" class="form-checkbox" checked>
-                            <label for="strokeToggle" class="text-sm text-gray-300 cursor-pointer flex-1">Stroke</label>
-                            <div class="custom-checkbox checked">
-                                <i data-lucide="check" class="w-4 h-4 text-white"></i>
+            </button>
+                    <div class="relative">
+                        <button id="settingsButton" class="control-button" title="Settings">
+                            <i data-lucide="settings" class="w-6 h-6"></i>
+            </button>
+                        <!-- Settings Popover -->
+                        <div id="settingsPopover" class="hidden absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-80 bg-surface rounded-lg shadow-lg border border-gray-700 py-2 z-50" style="margin-left: calc(-1 * (var(--settings-button-width) / 2));">
+                            <div class="px-4 py-3 border-b border-gray-700">
+                                <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+                                    <i data-lucide="settings" class="w-4 h-4"></i>
+                                    Camera Effects
+                                </h3>
                             </div>
-                        </div>
-                        
-                        <!-- Stroke Width Slider (shown when stroke is enabled) -->
-                        <div id="strokeWidthContainer" class="pl-8 space-y-2">
-                            <div class="flex justify-between items-center">
-                                <label for="strokeWidth" class="text-sm text-gray-300">Width</label>
-                                <span id="strokeWidthValue" class="text-sm text-gray-300">2px</span>
-                            </div>
-                            <input type="range" id="strokeWidth" 
-                                min="1" max="10" value="2" step="1"
-                                class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
-                        </div>
+                            <div class="px-4 py-3 space-y-4">
+                                <!-- Drop Shadow Toggle -->
+                                <div class="flex items-center justify-between checkbox-wrapper">
+                                    <div class="flex items-center gap-3">
+                                        <div class="relative">
+                                            <input type="checkbox" id="dropShadowToggle" class="peer sr-only" checked>
+                                            <div class="w-11 h-6 bg-gray-600 rounded-full peer-checked:bg-primary transition-colors duration-200 ease-in-out"></div>
+                                            <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full transition-transform duration-200 ease-in-out peer-checked:translate-x-5"></div>
+                                        </div>
+                                        <label for="dropShadowToggle" class="text-sm text-gray-300 cursor-pointer select-none">Drop Shadow</label>
+                                    </div>
+                                </div>
 
-                        <!-- Stroke Color Picker (shown when stroke is enabled) -->
-                        <div id="strokeColorContainer" class="pl-8 space-y-2">
-                            <label for="strokeColor" class="text-sm text-gray-300">Color</label>
-                            <div class="flex items-center space-x-2">
-                                <input type="color" id="strokeColor" 
-                                    value="#FFFFFF"
-                                    class="w-8 h-8 rounded cursor-pointer border border-gray-600">
-                                <span id="strokeColorValue" class="text-sm text-gray-300">#FFFFFF</span>
-                            </div>
-                        </div>
-                    </div>
+                                <!-- Stroke Toggle -->
+                                <div class="space-y-3 checkbox-wrapper">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center gap-3">
+                                            <div class="relative">
+                                                <input type="checkbox" id="strokeToggle" class="peer sr-only" checked>
+                                                <div class="w-11 h-6 bg-gray-600 rounded-full peer-checked:bg-primary transition-colors duration-200 ease-in-out"></div>
+                                                <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full transition-transform duration-200 ease-in-out peer-checked:translate-x-5"></div>
+                                            </div>
+                                            <label for="strokeToggle" class="text-sm text-gray-300 cursor-pointer select-none">Stroke</label>
+                                        </div>
+                                    </div>
 
-                    <!-- Pulse Effect Toggle -->
-                    <div class="checkbox-wrapper">
-                        <input type="checkbox" id="pulseEffectToggle" class="form-checkbox">
-                        <label for="pulseEffectToggle" class="text-sm text-gray-300 cursor-pointer flex-1">Pulse Effect</label>
-                        <div class="custom-checkbox">
-                            <i data-lucide="check" class="w-4 h-4 text-white"></i>
+                                    <!-- Stroke Options -->
+                                    <div id="strokeOptions" class="pl-14 space-y-3">
+                                        <!-- Stroke Width -->
+                                        <div id="strokeWidthContainer" class="flex items-center justify-between">
+                                            <label class="text-sm text-gray-300">Width</label>
+                                            <div class="flex items-center gap-2">
+                                                <input type="range" id="strokeWidth" min="1" max="5" value="2" 
+                                                       class="w-24 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-primary">
+                                                <span id="strokeWidthValue" class="text-xs text-gray-400 w-8 text-right">2px</span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Stroke Color -->
+                                        <div id="strokeColorContainer" class="flex items-center justify-between">
+                                            <label class="text-sm text-gray-300">Color</label>
+                                            <div class="flex items-center gap-2">
+                                                <input type="color" id="strokeColor" value="#FFFFFF" 
+                                                       class="w-8 h-8 rounded cursor-pointer bg-transparent border border-gray-600">
+                                                <span id="strokeColorValue" class="text-xs text-gray-400 w-16 text-right">#FFFFFF</span>
+                                            </div>
+                                        </div>
+                                    </div>
+        </div>
+
+                                <!-- Pulse Effect Toggle -->
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <div class="relative">
+                                            <input type="checkbox" id="pulseEffectToggle" class="peer sr-only">
+                                            <div class="w-11 h-6 bg-gray-600 rounded-full peer-checked:bg-primary transition-colors duration-200 ease-in-out"></div>
+                                            <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full transition-transform duration-200 ease-in-out peer-checked:translate-x-5"></div>
+                                        </div>
+                                        <label for="pulseEffectToggle" class="text-sm text-gray-300 cursor-pointer select-none">Pulse Effect</label>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -520,6 +151,18 @@
             try {
                 // Initialize Lucide icons
                 lucide.createIcons();
+                
+                // Initialize app and store instance
+                const app = new ScreenRecorderApp();
+                document.querySelector('script[type="module"]').__app = app;
+                
+                // Cleanup on page unload
+                window.addEventListener('unload', () => {
+                    app.cleanup();
+                    if (notificationTimeout) {
+                        clearTimeout(notificationTimeout);
+                    }
+                });
                 
                 // Notification management
                 const notification = document.getElementById('notification');
@@ -572,8 +215,6 @@
                 window.showNotification = showNotification;
                 
                 // Handle settings popover visibility and toggles
-                const settingsButton = document.getElementById('settingsButton');
-                const settingsPopover = document.getElementById('settingsPopover');
                 const dropShadowToggle = document.getElementById('dropShadowToggle');
                 const strokeToggle = document.getElementById('strokeToggle');
                 const pulseEffectToggle = document.getElementById('pulseEffectToggle');
@@ -595,15 +236,21 @@
 
                 // Initialize checkbox states
                 [dropShadowToggle, strokeToggle, pulseEffectToggle].forEach(checkbox => {
-                    const customCheckbox = checkbox.nextElementSibling.nextElementSibling;
-                    updateCheckboxUI(checkbox, customCheckbox);
+                    if (!checkbox) {
+                        console.warn(`Checkbox element not found: ${checkbox?.id}`);
+                        return;
+                    }
+                    
+                    const wrapper = checkbox.closest('.checkbox-wrapper');
+                    if (!wrapper) {
+                        console.warn(`Checkbox wrapper not found for: ${checkbox.id}`);
+                        return;
+                    }
 
                     // Add click handler to the wrapper
-                    const wrapper = checkbox.closest('.checkbox-wrapper');
                     wrapper.addEventListener('click', (e) => {
                         if (e.target !== checkbox) {
                             checkbox.checked = !checkbox.checked;
-                            updateCheckboxUI(checkbox, customCheckbox);
                             document.dispatchEvent(new CustomEvent('settingsChange', {
                                 detail: { setting: checkbox.id.replace('Toggle', '').toLowerCase(), value: checkbox.checked }
                             }));
@@ -614,8 +261,8 @@
                 // Show/hide stroke options based on toggle state
                 const updateStrokeOptions = () => {
                     const isEnabled = strokeToggle.checked;
-                    strokeWidthContainer.style.display = isEnabled ? 'block' : 'none';
-                    strokeColorContainer.style.display = isEnabled ? 'block' : 'none';
+                    strokeWidthContainer.style.display = isEnabled ? 'flex' : 'none';
+                    strokeColorContainer.style.display = isEnabled ? 'flex' : 'none';
                 };
                 
                 // Update stroke width display
@@ -639,19 +286,9 @@
                 // Initialize stroke options visibility
                 updateStrokeOptions();
                 
-                // Toggle settings popover
-                settingsButton.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    settingsPopover.classList.toggle('hidden');
-                });
-
-                // Close popover when clicking outside
-                document.addEventListener('click', (e) => {
-                    if (!settingsPopover.contains(e.target) && e.target !== settingsButton) {
-                        settingsPopover.classList.add('hidden');
-                    }
-                });
-
+                // Update stroke options when toggle changes
+                strokeToggle.addEventListener('change', updateStrokeOptions);
+                
                 // Handle toggle button states
                 const toggleButtons = document.querySelectorAll('#micAudioToggle, #systemAudioToggle');
                 toggleButtons.forEach(button => {
@@ -668,45 +305,34 @@
                     });
                 });
                 
-                const app = new ScreenRecorderApp();
-                
-                // Cleanup on page unload
-                window.addEventListener('unload', () => {
-                    app.cleanup();
-                    if (notificationTimeout) {
-                        clearTimeout(notificationTimeout);
-                    }
-                });
-
                 // Handle camera toggle
                 const cameraToggle = document.getElementById('cameraToggle');
                 const cameraIcon = cameraToggle.querySelector('.camera-icon');
                 const cameraOffIcon = cameraToggle.querySelector('.camera-off-icon');
-                let isCameraEnabled = false;
 
                 cameraToggle.addEventListener('click', () => {
-                    if (isCameraEnabled) {
-                        // Disable camera
-                        cameraIcon.classList.add('hidden');
-                        cameraOffIcon.classList.remove('hidden');
-                        cameraToggle.classList.remove('toggle-active');
-                        cameraToggle.classList.add('toggle-inactive');
-                        document.dispatchEvent(new CustomEvent('cameraStateChanged', {
-                            detail: { enabled: false }
-                        }));
-                        window.showNotification('Camera disabled', 'info');
-                    } else {
-                        // Enable camera
+                    const isCurrentlyActive = cameraToggle.classList.contains('toggle-active');
+                    
+                    // Update button state
+                    if (!isCurrentlyActive) {
                         cameraIcon.classList.remove('hidden');
                         cameraOffIcon.classList.add('hidden');
                         cameraToggle.classList.remove('toggle-inactive');
                         cameraToggle.classList.add('toggle-active');
-                        document.dispatchEvent(new CustomEvent('cameraStateChanged', {
-                            detail: { enabled: true }
-                        }));
-                        window.showNotification('Camera enabled', 'success');
+                    } else {
+                        cameraIcon.classList.add('hidden');
+                        cameraOffIcon.classList.remove('hidden');
+                        cameraToggle.classList.remove('toggle-active');
+                        cameraToggle.classList.add('toggle-inactive');
                     }
-                    isCameraEnabled = !isCameraEnabled;
+
+                    // Dispatch event with correct structure
+                    document.dispatchEvent(new CustomEvent('cameraStateChanged', {
+                        detail: {
+                            videoEnabled: !isCurrentlyActive,
+                            audioEnabled: false  // Audio will be handled separately
+                        }
+                    }));
                 });
 
                 // Handle record button icon toggle
@@ -729,6 +355,11 @@
                 window.showNotification('Failed to initialize application. Please refresh the page.', 'error');
             }
         });
+    </script>
+
+    <script>
+        // Add CSS variable for settings button width
+        document.documentElement.style.setProperty('--settings-button-width', '48px'); // 12 * 4 = 48px (w-12)
     </script>
 </body>
 </html>

@@ -17,7 +17,8 @@ export class Recorder {
         this.mediaRecorder = null;
         this.recordedChunks = [];
         this.screenStream = null;
-        this.cameraStream = null;
+        this.cameraVideoStream = null;
+        this.cameraAudioStream = null;
         this.isRecording = false;
 
         // Bind methods
@@ -30,24 +31,36 @@ export class Recorder {
     /**
      * Starts the recording
      * @param {MediaStream} screenStream - The screen capture stream
-     * @param {MediaStream} cameraStream - The camera stream
+     * @param {MediaStream} cameraVideoStream - The camera video stream
+     * @param {MediaStream} cameraAudioStream - The camera audio stream
+     * @param {Object} [audioSettings] - Audio settings
+     * @param {boolean} [audioSettings.includeMic] - Whether to include microphone audio
+     * @param {boolean} [audioSettings.includeSystemAudio] - Whether to include system audio
      * @returns {Promise<void>}
      */
-    async startRecording(screenStream, cameraStream) {
+    async startRecording(screenStream, cameraVideoStream, cameraAudioStream, audioSettings = { includeMic: true, includeSystemAudio: true }) {
         if (this.isRecording) return;
 
         try {
             this.screenStream = screenStream;
-            this.cameraStream = cameraStream;
+            this.cameraVideoStream = cameraVideoStream;
+            this.cameraAudioStream = cameraAudioStream;
 
             // Create canvas stream
             const canvasStream = this.canvas.captureStream(30); // 30 FPS
 
-            // Add audio track from camera if available
-            if (this.cameraStream) {
-                const micTrack = this.cameraStream.getAudioTracks()[0];
+            // Add audio tracks based on settings
+            if (audioSettings.includeMic && this.cameraAudioStream) {
+                const micTrack = this.cameraAudioStream.getAudioTracks()[0];
                 if (micTrack) {
                     canvasStream.addTrack(micTrack);
+                }
+            }
+
+            if (audioSettings.includeSystemAudio && this.screenStream) {
+                const systemAudioTrack = this.screenStream.getAudioTracks()[0];
+                if (systemAudioTrack) {
+                    canvasStream.addTrack(systemAudioTrack);
                 }
             }
 
@@ -70,11 +83,13 @@ export class Recorder {
             this.isRecording = true;
 
             // Handle screen sharing end
-            this.screenStream.getVideoTracks()[0].onended = () => {
-                if (this.isRecording) {
-                    this.stopRecording();
-                }
-            };
+            if (this.screenStream) {
+                this.screenStream.getVideoTracks()[0].onended = () => {
+                    if (this.isRecording) {
+                        this.stopRecording();
+                    }
+                };
+            }
 
         } catch (error) {
             this.cleanup();
@@ -143,6 +158,14 @@ export class Recorder {
         if (this.screenStream) {
             this.screenStream.getTracks().forEach(track => track.stop());
             this.screenStream = null;
+        }
+        if (this.cameraVideoStream) {
+            this.cameraVideoStream.getTracks().forEach(track => track.stop());
+            this.cameraVideoStream = null;
+        }
+        if (this.cameraAudioStream) {
+            this.cameraAudioStream.getTracks().forEach(track => track.stop());
+            this.cameraAudioStream = null;
         }
 
         this.mediaRecorder = null;

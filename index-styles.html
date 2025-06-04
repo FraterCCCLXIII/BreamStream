@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beam - Screen & Video Capture</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Prevent scrolling */
+            background-color: #282828; /* Stone very dark gray for the app background */
+        }
+        #main-video-preview {
+            background-color: #1A1A1A; /* Even darker for the video preview background */
+            border-radius: 1rem; /* Rounded corners */
+            object-fit: contain; /* Ensure video fits without cropping */
+            width: 100%;
+            height: 100%;
+        }
+        #camera-overlay-video {
+            position: absolute;
+            bottom: 20px; /* Initial position */
+            left: 20px; /* Initial position */
+            width: 150px; /* Initial size */
+            height: 150px; /* Initial size */
+            border-radius: 50%; /* Make it a circle */
+            overflow: hidden; /* Hide anything outside the circle */
+            border: 3px solid transparent; /* Default transparent border for stroke */
+            box-shadow: none; /* Default no shadow/glow */
+            cursor: grab; /* Indicate draggable */
+            transition: all 0.2s ease-in-out; /* Smooth transitions for styles */
+            z-index: 100; /* Ensure it's above main video */
+            object-fit: cover; /* Fill the circle */
+        }
+        #camera-overlay-video.resizing {
+            cursor: grabbing;
+        }
+        .resize-handle {
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            background: #6366f1;
+            border-radius: 50%;
+            border: 2px solid white;
+            z-index: 101;
+        }
+        .resize-handle.bottom-right {
+            bottom: -7.5px;
+            right: -7.5px;
+            cursor: nwse-resize;
+        }
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .toast {
+            padding: 1rem 1.5rem;
+            border-radius: 0.5rem;
+            color: white;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            animation: fadein 0.5s, fadeout 0.5s 2.5s forwards;
+        }
+        @keyframes fadein {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeout {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(-20px); }
+            }
+        .popover-content {
+            position: absolute;
+            bottom: calc(100% + 10px); /* Position above the button */
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #3A3A3A; /* Matches control panel background */
+            border-radius: 0.75rem;
+            padding: 1rem;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+            min-width: 200px;
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .popover-content::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%) rotate(45deg);
+            width: 20px;
+            height: 20px;
+            background-color: #3A3A3A; /* Matches control panel background */
+            z-index: -1;
+        }
+        .popover-content button {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            background-color: #4A4A4A; /* Slightly lighter for hover */
+            color: white;
+            font-weight: 500;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .popover-content button:hover {
+            background-color: #5A5A5A;
+        }
+        /* Button styling for control panel */
+        .control-button {
+            background-color: #4A4A4A; /* Slightly lighter stone gray for buttons */
+            color: white;
+            width: 3.5rem; /* Fixed width for circular button */
+            height: 3.5rem; /* Fixed height for circular button */
+            border-radius: 9999px; /* Make it circular */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 500;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            /* Removed box-shadow from normal state */
+        }
+        .control-button:hover:not(:disabled) {
+            background-color: #5A5A5A;
+            transform: translateY(-2px);
+        }
+        .control-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .control-button.active {
+            background-color: #6366f1; /* Accent color when active */
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4); /* Kept box-shadow for active state */
+        }
+        .control-button.active:hover:not(:disabled) {
+            background-color: #4f52d1;
+        }
+        .record-button {
+            background-color: #ef4444; /* Red for record */
+            color: white;
+        }
+        .record-button:hover:not(:disabled) {
+            background-color: #dc2626;
+        }
+        .record-button.active {
+            background-color: #22c55e; /* Green when recording */
+        }
+        .record-button.active:hover:not(:disabled) {
+            background-color: #16a34a;
+        }
+
+        /* Status Dot and Tooltip Styles */
+        .status-container {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 9999px;
+            background-color: #4A4A4A;
+            cursor: help;
+            z-index: 1001;
+        }
+        .status-dot {
+            width: 0.75rem;
+            height: 0.75rem;
+            border-radius: 50%;
+            transition: background-color 0.3s ease-in-out;
+        }
+        .status-dot.ready {
+            background-color: #22c55e; /* Green for ready */
+        }
+        .status-dot.recording {
+            background-color: #ef4444; /* Red for recording */
+            animation: pulse 1.5s infinite; /* Pulsing animation for recording */
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        .status-tooltip {
+            position: absolute;
+            bottom: calc(100% + 10px); /* Position above the dot */
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #3A3A3A;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+            z-index: 10;
+            pointer-events: none; /* Allows clicks to pass through to elements below */
+        }
+        .status-container:hover .status-tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+        .status-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%) rotate(45deg);
+            width: 10px;
+            height: 10px;
+            background-color: #3A3A3A;
+            border-radius: 2px;
+        }
+
+        /* Settings Button Styles */
+        .settings-button {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background-color: #4A4A4A;
+            color: white;
+            width: 3.5rem;
+            height: 3.5rem;
+            border-radius: 9999px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 500;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            z-index: 1001;
+        }
+        .settings-button:hover {
+            background-color: #5A5A5A;
+            transform: translateY(-2px);
+        }
+
+        /* General Settings Popover */
+        .settings-popover {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #E5E7EB;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            min-width: 300px;
+        }
+        .settings-popover h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #333; /* Darker text for contrast */
+            margin-bottom: 0.5rem;
+        }
+        .settings-popover label {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: #555; /* Darker text for contrast */
+            font-weight: 500;
+        }
+        .settings-popover input[type="range"],
+        .settings-popover input[type="color"],
+        .settings-popover input[type="number"] {
+            background-color: #f0f0f0; /* Lighter input background */
+            border: 1px solid #bbb;
+            border-radius: 0.5rem;
+            padding: 0.5rem;
+            color: #333; /* Darker text for contrast */
+            flex-grow: 1;
+        }
+        .settings-popover input[type="color"] {
+            width: 60px; /* Adjust size for color input */
+            height: 35px;
+            padding: 0;
+            border: none;
+            cursor: pointer;
+        }
+        .settings-popover .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 24px;
+            background-color: #ccc; /* Lighter background for toggle switch */
+            border-radius: 12px;
+            transition: background-color 0.3s;
+            cursor: pointer;
+        }
+        .settings-popover .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .settings-popover .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #999; /* Lighter slider background */
+            transition: .3s;
+            border-radius: 12px;
+            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2); /* Subtle inner shadow */
+        }
+        .settings-popover .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* Subtle shadow for the thumb */
+        }
+        .settings-popover input:checked + .toggle-slider {
+            background-color: #6366f1;
+        }
+        .settings-popover input:checked + .toggle-slider:before {
+            transform: translateX(16px);
+        }
+
+        /* Top Navigation for Window Controls */
+        .top-nav {
+            display: flex;
+            justify-content: flex-start; /* Align to the left */
+            align-items: center;
+            width: 100%;
+            padding: 10px; /* Subtle padding around buttons */
+            /* No background or border */
+        }
+        .window-controls {
+            display: flex;
+            gap: 8px;
+            /* Removed position: absolute, top, left */
+        }
+        .window-control-button {
+            background-color: transparent;
+            border: none;
+            color: #9ca3af; /* Gray text */
+            padding: 0.3rem; /* Slightly smaller padding */
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+        }
+        .window-control-button span[data-lucide] {
+            width: 1.15rem; /* Smaller icon size */
+            height: 1.15rem; /* Smaller icon size */
+        }
+        .window-control-button:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+        .window-control-button.close:hover {
+            background-color: #ef4444; /* Red for close */
+            color: white;
+        }
+
+        /* No Stream Placeholder */
+        .no-stream-placeholder {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #cccccc; /* Light gray text */
+            font-size: 0.875rem; /* Small text */
+            gap: 0.5rem; /* Space between icon and text */
+            background-color: #1A1A1A; /* Match video preview background */
+            border-radius: 1rem; /* Match video preview border-radius */
+            z-index: 1; /* Ensure it's behind the video when active, but above the container background */
+        }
+        .no-stream-placeholder span[data-lucide] {
+            width: 2rem; /* Icon size */
+            height: 2rem; /* Icon size */
+            color: #9ca3af; /* Subtle icon color */
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen p-4">
+
+    <!-- Top Navigation Area for Window Controls -->
+    <div class="top-nav">
+        <div class="window-controls">
+            <button id="close-button" class="window-control-button close">
+                <span data-lucide="x" class="w-5 h-5"></span>
+            </button>
+            <button id="fullscreen-button" class="window-control-button">
+                <span data-lucide="maximize-2" class="w-5 h-5"></span>
+            </button>
+            <button id="minimize-button" class="window-control-button">
+                <span data-lucide="minus" class="w-5 h-5"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow flex flex-col items-center justify-center relative rounded-xl">
+        <!-- Status Dot Component -->
+        <div id="status-component" class="status-container">
+            <span id="status-dot" class="status-dot ready"></span>
+            <div id="status-tooltip" class="status-tooltip">Ready</div>
+        </div>
+
+        <!-- Video Preview Container -->
+        <div class="relative w-full h-full max-w-5xl aspect-video overflow-hidden flex items-center justify-center">
+            <video id="main-video-preview" autoplay playsinline class="w-full h-full object-contain"></video>
+            <!-- No Stream Placeholder -->
+            <div id="no-stream-placeholder" class="no-stream-placeholder">
+                <span data-lucide="monitor-off"></span>
+                <span>No Stream Active</span>
+            </div>
+            <!-- Camera Overlay Video -->
+            <video id="camera-overlay-video" autoplay playsinline class="hidden"></video>
+            <div id="camera-resize-handle" class="resize-handle bottom-right hidden"></div>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="mt-6 flex flex-wrap justify-center items-center gap-4 bg-[#3A3A3A] p-4 rounded-full w-fit mx-auto">
+            <!-- Record Button -->
+            <button id="record-button" class="control-button record-button">
+                <span data-lucide="circle-dot" class="w-8 h-8"></span>
+            </button>
+
+            <!-- Microphone Toggle -->
+            <button id="mic-toggle" class="control-button">
+                <span data-lucide="mic" class="w-6 h-6"></span>
+            </button>
+
+            <!-- System Audio Toggle -->
+            <button id="system-audio-toggle" class="control-button">
+                <span data-lucide="volume-2" class="w-6 h-6"></span>
+            </button>
+
+            <!-- Camera Toggle -->
+            <button id="camera-toggle" class="control-button">
+                <span data-lucide="camera" class="w-6 h-6"></span>
+            </button>
+
+            <!-- Screen Share Toggle -->
+            <button id="screenshare-toggle" class="control-button">
+                <span data-lucide="monitor" class="w-6 h-6"></span>
+            </button>
+
+            <!-- Save Button -->
+            <button id="save-button" class="control-button" disabled>
+                <span data-lucide="save" class="w-6 h-6"></span>
+            </button>
+
+            <!-- Share Button with Popover -->
+            <div class="relative">
+                <button id="share-button" class="control-button" disabled>
+                    <span data-lucide="share-2" class="w-6 h-6"></span>
+                </button>
+                <!-- Share Popover Content -->
+                <div id="share-popover" class="popover-content hidden">
+                    <button class="share-option" data-platform="x">
+                        <span data-lucide="x" class="w-5 h-5"></span> X (Twitter)
+                    </button>
+                    <button class="share-option" data-platform="facebook">
+                        <span data-lucide="facebook" class="w-5 h-5"></span> Facebook
+                    </button>
+                    <button class="share-option" data-platform="twitter">
+                        <span data-lucide="twitter" class="w-5 h-5"></span> Twitter
+                    </button>
+                    <button class="share-option" data-platform="instagram">
+                        <span data-lucide="instagram" class="w-5 h-5"></span> Instagram
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- General Settings Popover -->
+        <div id="settings-popover" class="settings-popover hidden">
+            <button id="top-right-close-settings" class="window-control-button close absolute top-2 right-2">
+                <span data-lucide="x" class="w-4 h-4"></span>
+            </button>
+            <h3>Settings</h3>
+            <label>
+                Dropshadow
+                <div class="toggle-switch">
+                    <input type="checkbox" id="toggle-dropshadow">
+                    <span class="toggle-slider"></span>
+                </div>
+            </label>
+            <label>
+                Stroke
+                <div class="toggle-switch">
+                    <input type="checkbox" id="toggle-stroke">
+                    <span class="toggle-slider"></span>
+                </div>
+            </label>
+            <label>
+                Glow
+                <div class="toggle-switch">
+                    <input type="checkbox" id="toggle-glow">
+                    <span class="toggle-slider"></span>
+                </div>
+            </label>
+            <label>
+                Stroke Width:
+                <input type="number" id="stroke-width" min="0" max="10" value="3">
+            </label>
+            <label>
+                Stroke Color:
+                <input type="color" id="stroke-color" value="#6366f1">
+            </label>
+            <button id="close-settings-popover" class="control-button !bg-indigo-600 hover:!bg-indigo-700 mt-4 px-6 py-2 rounded-full w-fit mx-auto">Close</button>
+        </div>
+
+        <!-- General Settings Button -->
+        <button id="general-settings-button" class="settings-button">
+            <span data-lucide="settings" class="w-6 h-6"></span>
+        </button>
+    </main>
+
+    <!-- Hidden Canvas for Recording Composition -->
+    <canvas id="recording-canvas" style="display: none;"></canvas>
+
+    <!-- Toaster Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script type="module">
+        document.addEventListener('DOMContentLoaded', () => {
+            // UI Elements
+            const mainVideoPreview = document.getElementById('main-video-preview');
+            const cameraOverlayVideo = document.getElementById('camera-overlay-video');
+            const cameraResizeHandle = document.getElementById('camera-resize-handle');
+            const recordButton = document.getElementById('record-button');
+            const micToggle = document.getElementById('mic-toggle');
+            const systemAudioToggle = document.getElementById('system-audio-toggle');
+            const cameraToggle = document.getElementById('camera-toggle');
+            const screenshareToggle = document.getElementById('screenshare-toggle');
+            const saveButton = document.getElementById('save-button');
+            const shareButton = document.getElementById('share-button');
+            const sharePopover = document.getElementById('share-popover');
+            const toastContainer = document.getElementById('toast-container');
+            const statusDot = document.getElementById('status-dot');
+            const statusTooltip = document.getElementById('status-tooltip');
+            const generalSettingsButton = document.getElementById('general-settings-button');
+            const settingsPopover = document.getElementById('settings-popover');
+            const closeSettingsPopoverButton = document.getElementById('close-settings-popover');
+            const topRightCloseSettingsButton = document.getElementById('top-right-close-settings');
+
+            // Recording Canvas Elements
+            const recordingCanvas = document.getElementById('recording-canvas');
+            const recordingCanvasCtx = recordingCanvas.getContext('2d');
+            let animationFrameId = null; // To store the requestAnimationFrame ID
+
+            // Camera Settings Controls
+            const toggleDropshadow = document.getElementById('toggle-dropshadow');
+            const toggleStroke = document.getElementById('toggle-stroke');
+            const toggleGlow = document.getElementById('toggle-glow');
+            const strokeWidthInput = document.getElementById('stroke-width');
+            const strokeColorInput = document.getElementById('stroke-color');
+
+            // Window Controls
+            const minimizeButton = document.getElementById('minimize-button');
+            const fullscreenButton = document.getElementById('fullscreen-button');
+            const closeButton = document.getElementById('close-button');
+
+
+            // State variables
+            let screenStream = null;
+            let cameraStream = null;
+            let mediaRecorder = null;
+            let recordedChunks = [];
+            let isRecording = false;
+            let isMicActive = false;
+            let isSystemAudioActive = true;
+            let isCameraActive = false;
+            let isScreensharing = false;
+
+            // Audio Context for mixing
+            let audioContext = null;
+            let audioDestination = null; // To capture mixed audio
+
+            // Camera overlay styling states
+            let cameraDropshadow = false;
+            let cameraStroke = true;
+            let cameraGlow = true;
+            let cameraStrokeWidth = 3;
+            let cameraStrokeColor = '#6366f1';
+
+            // Camera overlay drag & resize variables
+            let isDraggingCamera = false;
+            let isResizingCamera = false;
+            let initialX, initialY, initialWidth, initialHeight;
+            let cameraOffsetX, cameraOffsetY;
+
+            /**
+             * Displays a temporary notification (toast).
+             * @param {string} message - The message to display.
+             * @param {'success'|'error'|'info'} type - The type of notification (influences color).
+             */
+            function showToast(message, type = 'info') {
+                const toast = document.createElement('div');
+                toast.className = `toast ${type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500'}`;
+                toast.textContent = message;
+                toastContainer.appendChild(toast);
+
+                setTimeout(() => {
+                    toast.remove();
+                }, 3000);
+            }
+
+            /**
+             * Updates the UI state of a button (active/inactive).
+             * @param {HTMLElement} button - The button element.
+             * @param {boolean} isActive - Whether the button should be active.
+             * @param {string} iconActive - Lucide icon name when active.
+             * @param {string} iconInactive - Lucide icon name when inactive.
+             */
+            function updateButtonUI(button, isActive, iconActive, iconInactive) {
+                button.classList.toggle('active', isActive);
+                const iconSpan = button.querySelector('span[data-lucide]');
+
+                if (iconSpan) {
+                    iconSpan.setAttribute('data-lucide', isActive ? iconActive : iconInactive);
+                    lucide.createIcons(); // Re-render icon
+                }
+            }
+
+            /**
+             * Updates the status dot and tooltip.
+             * @param {string} status - The current status ('Ready', 'Recording...', 'Recording Saved').
+             */
+            function updateStatusDot(status) {
+                statusTooltip.textContent = status;
+                statusDot.classList.remove('ready', 'recording'); // Remove existing classes
+
+                if (status === 'Recording...') {
+                    statusDot.classList.add('recording');
+                } else {
+                    statusDot.classList.add('ready');
+                }
+            }
+
+            /**
+             * Applies the current camera overlay styles based on state variables.
+             */
+            function applyCameraOverlayStyles() {
+                if (cameraOverlayVideo) {
+                    // Apply stroke (border)
+                    if (cameraStroke) {
+                        cameraOverlayVideo.style.border = `${cameraStrokeWidth}px solid ${cameraStrokeColor}`;
+                    } else {
+                        cameraOverlayVideo.style.border = '3px solid transparent'; // Keep default transparent border
+                    }
+
+                    // Apply dropshadow or glow
+                    if (cameraGlow) {
+                        cameraOverlayVideo.style.boxShadow = `0 0 15px ${cameraStrokeColor}`; /* Glow effect */
+                    } else if (cameraDropshadow) {
+                        cameraOverlayVideo.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.5)'; /* Subtle dropshadow */
+                    } else {
+                        cameraOverlayVideo.style.boxShadow = 'none';
+                    }
+                }
+            }
+
+            /**
+             * Updates the main video preview based on active streams.
+             */
+            function updateMainVideoSource() {
+                if (isScreensharing && screenStream) {
+                    mainVideoPreview.srcObject = screenStream;
+                    document.getElementById('no-stream-placeholder').classList.add('hidden'); // Hide placeholder
+                } else if (isCameraActive && cameraStream) {
+                    mainVideoPreview.srcObject = cameraStream;
+                    document.getElementById('no-stream-placeholder').classList.add('hidden'); // Hide placeholder
+                } else {
+                    mainVideoPreview.srcObject = null;
+                    document.getElementById('no-stream-placeholder').classList.remove('hidden'); // Show placeholder
+                }
+            }
+
+            /**
+             * Manages the camera overlay visibility and source.
+             */
+            function updateCameraOverlay() {
+                if (isCameraActive && cameraStream && isScreensharing) {
+                    cameraOverlayVideo.srcObject = cameraStream;
+                    cameraOverlayVideo.classList.remove('hidden');
+                    cameraResizeHandle.classList.remove('hidden');
+                    applyCameraOverlayStyles(); // Apply styles when visible
+                } else {
+                    cameraOverlayVideo.srcObject = null;
+                    cameraOverlayVideo.classList.add('hidden');
+                    cameraResizeHandle.classList.add('hidden');
+                }
+            }
+
+            /**
+             * Stops all tracks in a given MediaStream.
+             * @param {MediaStream} stream - The stream to stop.
+             */
+            function stopStreamTracks(stream) {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+            }
+
+            /**
+             * Toggles screen sharing on/off.
+             */
+            async function toggleScreenshare() {
+                if (isScreensharing) {
+                    // Stop screen sharing
+                    stopStreamTracks(screenStream);
+                    screenStream = null;
+                    isScreensharing = false;
+                    showToast('Screen sharing stopped.', 'info');
+                } else {
+                    try {
+                        // Request screen with audio
+                        screenStream = await navigator.mediaDevices.getDisplayMedia({
+                            video: {
+                                cursor: "always",
+                                displaySurface: "monitor" // Prefer monitor capture
+                            },
+                            audio: {
+                                echoCancellation: true,
+                                noiseSuppression: true,
+                                sampleRate: 44100,
+                                channelCount: 2 // Request stereo audio
+                            }
+                        });
+                        isScreensharing = true;
+                        showToast('Screen sharing started.', 'success');
+
+                        // Check if we got audio
+                        const audioTracks = screenStream.getAudioTracks();
+                        if (audioTracks.length === 0 && isSystemAudioActive) {
+                            showToast('System audio not available. Please ensure "Share audio" is selected in the screen share dialog.', 'warning');
+                        } else if (audioTracks.length > 0) {
+                            console.log('System audio track acquired:', {
+                                label: audioTracks[0].label,
+                                enabled: audioTracks[0].enabled,
+                                muted: audioTracks[0].muted
+                            });
+                        }
+
+                        screenStream.getVideoTracks()[0].onended = () => {
+                            if (isScreensharing) {
+                                toggleScreenshare();
+                                showToast('Screen sharing ended by user.', 'info');
+                            }
+                        };
+                    } catch (error) {
+                        console.error('Error starting screen share:', error);
+                        showToast(`Failed to start screen share: ${error.message}`, 'error');
+                        isScreensharing = false;
+                    }
+                }
+                updateMainVideoSource();
+                updateCameraOverlay();
+                updateButtonUI(screenshareToggle, isScreensharing, 'monitor-stop', 'monitor');
+                updateStatusDot(isScreensharing ? 'Sharing Screen' : (isRecording ? 'Recording...' : 'Ready'));
+            }
+
+            /**
+             * Toggles camera on/off.
+             */
+            async function toggleCamera() {
+                if (isCameraActive) {
+                    // Stop camera
+                    stopStreamTracks(cameraStream);
+                    cameraStream = null;
+                    isCameraActive = false;
+                    showToast('Camera off.', 'info');
+                } else {
+                    // Start camera
+                    try {
+                        // Request both video and audio for camera
+                        cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                            video: true,
+                            audio: true // Explicitly request audio
+                        });
+                        isCameraActive = true;
+                        showToast('Camera on.', 'success');
+                    } catch (error) {
+                        console.error('Error starting camera:', error);
+                        showToast(`Failed to start camera: ${error.message}`, 'error');
+                        isCameraActive = false;
+                    }
+                }
+                updateMainVideoSource();
+                updateCameraOverlay();
+                updateButtonUI(cameraToggle, isCameraActive, 'camera-off', 'camera');
+                updateStatusDot(isCameraActive ? 'Camera Active' : (isRecording ? 'Recording...' : 'Ready'));
+            }
+
+            /**
+             * Toggles microphone audio on/off.
+             */
+            function toggleMicAudio() {
+                isMicActive = !isMicActive;
+                if (cameraStream) {
+                    cameraStream.getAudioTracks().forEach(track => track.enabled = isMicActive);
+                }
+                showToast(`Microphone ${isMicActive ? 'enabled' : 'disabled'}.`, 'info');
+                updateButtonUI(micToggle, isMicActive, 'mic', 'mic-off');
+            }
+
+            /**
+             * Toggles system audio on/off.
+             * Note: Toggling system audio after starting screen share often requires restarting the screen share.
+             * For this implementation, it assumes getDisplayMedia provides a track that can be toggled.
+             */
+            function toggleSystemAudio() {
+                isSystemAudioActive = !isSystemAudioActive;
+                if (screenStream) {
+                    // Find audio tracks from the screen stream and toggle them
+                    screenStream.getAudioTracks().forEach(track => track.enabled = isSystemAudioActive);
+                    showToast(`System audio ${isSystemAudioActive ? 'enabled' : 'disabled'}.`, 'info');
+                } else {
+                    showToast('System audio setting will apply on next screen share.', 'info');
+                }
+                updateButtonUI(systemAudioToggle, isSystemAudioActive, 'volume-2', 'volume-x');
+            }
+
+            /**
+             * Draws the screen and camera streams onto the hidden canvas.
+             * This function is called repeatedly via requestAnimationFrame during recording.
+             */
+            function drawCanvasFrame() {
+                // Ensure main video preview is ready and has a video track
+                if (!mainVideoPreview || mainVideoPreview.readyState < 2 || !mainVideoPreview.videoWidth || !mainVideoPreview.videoHeight) {
+                    console.warn('Main video preview not ready:', {
+                        readyState: mainVideoPreview ? mainVideoPreview.readyState : 'null',
+                        width: mainVideoPreview ? mainVideoPreview.videoWidth : 'null',
+                        height: mainVideoPreview ? mainVideoPreview.videoHeight : 'null'
+                    });
+                    if (isRecording) {
+                        animationFrameId = requestAnimationFrame(drawCanvasFrame);
+                    }
+                    return;
+                }
+
+                // Set canvas dimensions to match video preview
+                const videoWidth = mainVideoPreview.videoWidth;
+                const videoHeight = mainVideoPreview.videoHeight;
+                
+                if (recordingCanvas.width !== videoWidth || recordingCanvas.height !== videoHeight) {
+                    console.log('Resizing canvas to match video:', { width: videoWidth, height: videoHeight });
+                    recordingCanvas.width = videoWidth;
+                    recordingCanvas.height = videoHeight;
+                }
+
+                // Clear canvas
+                recordingCanvasCtx.clearRect(0, 0, recordingCanvas.width, recordingCanvas.height);
+
+                // Draw main video
+                try {
+                    recordingCanvasCtx.drawImage(mainVideoPreview, 0, 0, recordingCanvas.width, recordingCanvas.height);
+                } catch (error) {
+                    console.error('Error drawing main video to canvas:', error);
+                }
+
+                // Draw camera overlay if active
+                if (isCameraActive && cameraStream && isScreensharing && cameraOverlayVideo.readyState >= 2) {
+                    try {
+                        // Get current position and size of the visible camera overlay
+                        const cameraRect = cameraOverlayVideo.getBoundingClientRect();
+                        const mainVideoRect = mainVideoPreview.getBoundingClientRect(); // Get the current displayed size of the main video
+
+                        // Calculate relative position and size on the main video preview
+                        // These are pixel values relative to the top-left of mainVideoPreview
+                        const relativeX = cameraOverlayVideo.offsetLeft; // Use offsetLeft/Top for relative position within its parent
+                        const relativeY = cameraOverlayVideo.offsetTop;
+                        const relativeWidth = cameraOverlayVideo.offsetWidth;
+                        const relativeHeight = cameraOverlayVideo.offsetHeight;
+
+                        // Scale to canvas resolution
+                        const scaleX = recordingCanvas.width / mainVideoPreview.offsetWidth; // Scale based on displayed size
+                        const scaleY = recordingCanvas.height / mainVideoPreview.offsetHeight;
+
+                        const canvasCameraX = relativeX * scaleX;
+                        const canvasCameraY = relativeY * scaleY;
+                        const canvasCameraWidth = relativeWidth * scaleX;
+                        const canvasCameraHeight = relativeHeight * scaleY;
+
+                        // Draw circular camera feed with effects
+                        recordingCanvasCtx.save(); // Save current canvas state
+
+                        // Apply dropshadow
+                        if (cameraDropshadow) {
+                            recordingCanvasCtx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+                            recordingCanvasCtx.shadowBlur = 12;
+                            recordingCanvasCtx.shadowOffsetX = 0;
+                            recordingCanvasCtx.shadowOffsetY = 4;
+                        }
+
+                        // Create circular clip path
+                        const centerX = canvasCameraX + canvasCameraWidth / 2;
+                        const centerY = canvasCameraY + canvasCameraHeight / 2;
+                        const radius = Math.min(canvasCameraWidth, canvasCameraHeight) / 2;
+
+                        recordingCanvasCtx.beginPath();
+                        recordingCanvasCtx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                        recordingCanvasCtx.closePath();
+                        recordingCanvasCtx.clip(); // Clip subsequent drawing to this circle
+
+                        // Draw camera video
+                        recordingCanvasCtx.drawImage(cameraOverlayVideo, canvasCameraX, canvasCameraY, canvasCameraWidth, canvasCameraHeight);
+
+                        recordingCanvasCtx.restore(); // Restore canvas state to remove clip path and shadow
+
+                        // Apply stroke and glow (drawn after restore to be outside the clip)
+                        if (cameraStroke) {
+                            recordingCanvasCtx.beginPath();
+                            recordingCanvasCtx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                            recordingCanvasCtx.strokeStyle = cameraStrokeColor;
+                            recordingCanvasCtx.lineWidth = cameraStrokeWidth;
+                            recordingCanvasCtx.stroke();
+                        }
+                        if (cameraGlow) {
+                            // Redraw path for glow
+                            recordingCanvasCtx.beginPath();
+                            recordingCanvasCtx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                            recordingCanvasCtx.strokeStyle = cameraStrokeColor;
+                            recordingCanvasCtx.lineWidth = cameraStrokeWidth; // Use stroke width for glow spread
+                            recordingCanvasCtx.shadowColor = cameraStrokeColor;
+                            recordingCanvasCtx.shadowBlur = 15; // Glow effect
+                            recordingCanvasCtx.shadowOffsetX = 0;
+                            recordingCanvasCtx.shadowOffsetY = 0;
+                            recordingCanvasCtx.stroke();
+                            recordingCanvasCtx.shadowBlur = 0; // Reset shadow blur for next frame
+                        }
+                    } catch (error) {
+                        console.error('Error drawing camera overlay to canvas:', error);
+                    }
+                }
+
+                // Request next frame if still recording
+                if (isRecording) {
+                    animationFrameId = requestAnimationFrame(drawCanvasFrame);
+                }
+            }
+
+            // Add a function to check if canvas is actually drawing
+            function verifyCanvasDrawing() {
+                if (!isRecording) return;
+                
+                const imageData = recordingCanvasCtx.getImageData(0, 0, recordingCanvas.width, recordingCanvas.height);
+                const hasContent = imageData.data.some(pixel => pixel !== 0);
+                
+                console.log('Canvas drawing verification:', {
+                    hasContent,
+                    width: recordingCanvas.width,
+                    height: recordingCanvas.height,
+                    timestamp: new Date().toISOString()
+                });
+
+                if (!hasContent) {
+                    console.warn('Canvas appears to be empty!');
+                }
+            }
+
+            /**
+             * Starts or stops the recording.
+             */
+            async function toggleRecording() {
+                if (isRecording) {
+                    console.log('Stopping recording...');
+                    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                        mediaRecorder.stop();
+                    }
+                    isRecording = false;
+                    cancelAnimationFrame(animationFrameId);
+
+                    // Stop audio context if it was used
+                    if (audioContext) {
+                        audioContext.close();
+                        audioContext = null;
+                        audioDestination = null;
+                    }
+                    showToast('Recording stopped.', 'info');
+                } else {
+                    console.log('Starting recording setup...');
+                    if (!screenStream && !cameraStream) {
+                        console.error('No active streams available for recording');
+                        showToast('Please start screen share or camera first!', 'error');
+                        return;
+                    }
+
+                    // Initialize audio context for mixing
+                    try {
+                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        audioDestination = audioContext.createMediaStreamDestination();
+
+                        // Create a separate audio context for monitoring (without mic)
+                        const monitorContext = new (window.AudioContext || window.webkitAudioContext)();
+                        const monitorDestination = monitorContext.createMediaStreamDestination();
+
+                        // Collect audio tracks
+                        const audioTracksToMix = [];
+
+                        // Handle microphone audio (for recording only, no monitoring)
+                        if (isMicActive && cameraStream) {
+                            const micAudioTracks = cameraStream.getAudioTracks();
+                            if (micAudioTracks.length > 0) {
+                                // Create a separate stream for mic to prevent feedback
+                                const micStream = new MediaStream([micAudioTracks[0]]);
+                                const micSource = audioContext.createMediaStreamSource(micStream);
+                                const micGain = audioContext.createGain();
+                                micGain.gain.value = 1.0;
+                                micSource.connect(micGain);
+                                micGain.connect(audioDestination);
+                                audioTracksToMix.push(micAudioTracks[0]);
+                                console.log("Microphone audio connected to recording only (no monitoring)");
+                            }
+                        }
+
+                        // Handle system audio (for both recording and monitoring)
+                        if (isSystemAudioActive && screenStream) {
+                            const systemAudioTracks = screenStream.getAudioTracks();
+                            if (systemAudioTracks.length > 0) {
+                                // System audio for recording
+                                const systemStream = new MediaStream([systemAudioTracks[0]]);
+                                const systemSource = audioContext.createMediaStreamSource(systemStream);
+                                systemSource.connect(audioDestination);
+                                audioTracksToMix.push(systemAudioTracks[0]);
+
+                                // System audio for monitoring (optional)
+                                const monitorSource = monitorContext.createMediaStreamSource(systemStream);
+                                monitorSource.connect(monitorDestination);
+                                console.log("System audio connected to both recording and monitoring");
+                            }
+                        }
+
+                        // Start canvas capture
+                        console.log('Starting canvas capture...');
+                        const canvasStream = recordingCanvas.captureStream(30); // 30 FPS
+                        const canvasVideoTrack = canvasStream.getVideoTracks()[0];
+                        
+                        // Create final recording stream
+                        const recordingStream = new MediaStream();
+                        if (canvasVideoTrack) {
+                            recordingStream.addTrack(canvasVideoTrack);
+                        }
+                        if (audioDestination.stream.getAudioTracks().length > 0) {
+                            recordingStream.addTrack(audioDestination.stream.getAudioTracks()[0]);
+                        }
+
+                        console.log('Recording stream setup complete:', {
+                            videoTracks: recordingStream.getVideoTracks().length,
+                            audioTracks: recordingStream.getAudioTracks().length
+                        });
+
+                        // Setup MediaRecorder
+                        try {
+                            const mimeType = 'video/webm; codecs=vp8,opus';
+                            const options = {
+                                mimeType: MediaRecorder.isTypeSupported(mimeType) ? mimeType : 'video/webm',
+                                videoBitsPerSecond: 2500000
+                            };
+                            
+                            mediaRecorder = new MediaRecorder(recordingStream, options);
+                            recordedChunks = [];
+
+                            mediaRecorder.ondataavailable = (event) => {
+                                if (event.data && event.data.size > 0) {
+                                    recordedChunks.push(event.data);
+                                    console.log(`Recording chunk received: ${event.data.size} bytes`);
+                                }
+                            };
+
+                            mediaRecorder.onstop = () => {
+                                console.log('Recording stopped, processing chunks:', recordedChunks.length);
+                                if (recordedChunks.length > 0) {
+                                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                                    const url = URL.createObjectURL(blob);
+                                    
+                                    // Enable save button and update UI
+                                    saveButton.disabled = false;
+                                    shareButton.disabled = false;
+                                    updateStatusDot('Recording Saved');
+                                    showToast('Recording saved and ready to download!', 'success');
+                                    
+                                    // Store the blob URL for saving
+                                    saveButton.onclick = () => {
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = `beam_recording_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+                                        document.body.appendChild(a);
+                                        a.click();
+                                        document.body.removeChild(a);
+                                        URL.revokeObjectURL(url);
+                                        saveButton.disabled = true;
+                                        shareButton.disabled = true;
+                                        updateStatusDot('Ready');
+                                    };
+                                } else {
+                                    showToast('No recording data available', 'error');
+                                    updateStatusDot('Ready');
+                                }
+                            };
+
+                            // Start recording
+                            mediaRecorder.start(100); // Collect data every 100ms
+                            isRecording = true;
+                            showToast('Recording started!', 'success');
+                            
+                            // Start canvas drawing
+                            animationFrameId = requestAnimationFrame(drawCanvasFrame);
+
+                        } catch (error) {
+                            console.error('MediaRecorder setup failed:', error);
+                            showToast(`Recording setup failed: ${error.message}`, 'error');
+                            if (audioContext) {
+                                audioContext.close();
+                                audioContext = null;
+                            }
+                            if (monitorContext) {
+                                monitorContext.close();
+                            }
+                            return;
+                        }
+
+                    } catch (error) {
+                        console.error('Audio context setup failed:', error);
+                        showToast(`Audio setup failed: ${error.message}`, 'error');
+                        if (audioContext) {
+                            audioContext.close();
+                            audioContext = null;
+                        }
+                        return;
+                    }
+                }
+                updateButtonUI(recordButton, isRecording, 'stop-circle', 'circle-dot');
+                updateStatusDot(isRecording ? 'Recording...' : 'Ready');
+            }
+
+            /**
+             * Saves the recorded video.
+             */
+            function saveRecording() {
+                if (recordedChunks.length === 0) {
+                    showToast('No recording to save!', 'error');
+                    return;
+                }
+
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `beam_recording_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                recordedChunks = []; // Clear chunks after saving
+                saveButton.disabled = true;
+                shareButton.disabled = true;
+                showToast('Recording saved!', 'success');
+                updateStatusDot('Ready'); // Set status back to ready after saving
+            }
+
+            /**
+             * Toggles the visibility of the share popover.
+             */
+            function toggleSharePopover() {
+                sharePopover.classList.toggle('hidden');
+            }
+
+            /**
+             * Shares the recording on a selected social media platform.
+             * @param {string} platform - The social media platform ('x', 'facebook', 'twitter', 'instagram').
+             */
+            function shareOnSocial(platform) {
+                const shareUrl = "https://example.com/your-recorded-video"; // Placeholder URL
+                const shareText = "Check out my new recording from Beam!"; // Placeholder text
+
+                let url = '';
+                switch (platform) {
+                    case 'x': // Formerly Twitter
+                    case 'twitter':
+                        url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`;
+                        break;
+                    case 'facebook':
+                        url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(shareText)}`;
+                        break;
+                    case 'instagram':
+                        // Instagram sharing is complex for web; typically requires app or API.
+                        // For a simple web share, it's usually just a prompt to open the app.
+                        showToast('Instagram sharing usually requires their mobile app or API.', 'info');
+                        return;
+                    default:
+                        showToast('Unsupported share platform.', 'error');
+                        return;
+                }
+                window.open(url, '_blank');
+                toggleSharePopover(); // Hide popover after sharing attempt
+            }
+
+            // --- Camera Overlay Drag & Resize Logic ---
+            function setupCameraOverlayInteractions() {
+                cameraOverlayVideo.addEventListener('mousedown', (e) => {
+                    if (e.target === cameraOverlayVideo) { // Only drag if clicking on the video itself
+                        isDraggingCamera = true;
+                        cameraOverlayVideo.style.cursor = 'grabbing';
+                        const rect = cameraOverlayVideo.getBoundingClientRect();
+                        cameraOffsetX = e.clientX - rect.left;
+                        cameraOffsetY = e.clientY - rect.top;
+                    }
+                });
+
+                cameraResizeHandle.addEventListener('mousedown', (e) => {
+                    isResizingCamera = true;
+                    cameraOverlayVideo.classList.add('resizing');
+                    initialX = e.clientX;
+                    initialY = e.clientY;
+                    initialWidth = cameraOverlayVideo.offsetWidth;
+                    initialHeight = cameraOverlayVideo.offsetHeight;
+                    e.preventDefault(); // Prevent text selection during drag
+                });
+
+                document.addEventListener('mousemove', (e) => {
+                    if (isDraggingCamera) {
+                        let newLeft = e.clientX - cameraOffsetX;
+                        let newTop = e.clientY - cameraOffsetY;
+
+                        // Keep within bounds of the main video preview
+                        const mainVideoRect = mainVideoPreview.getBoundingClientRect();
+                        const cameraRect = cameraOverlayVideo.getBoundingClientRect();
+
+                        newLeft = Math.max(mainVideoRect.left, newLeft);
+                        newLeft = Math.min(mainVideoRect.right - cameraRect.width, newLeft);
+                        newTop = Math.max(mainVideoRect.top, newTop);
+                        newTop = Math.min(mainVideoRect.bottom - cameraRect.height, newTop);
+
+                        cameraOverlayVideo.style.left = `${newLeft - mainVideoRect.left}px`;
+                        cameraOverlayVideo.style.top = `${newTop - mainVideoRect.top}px`;
+                    } else if (isResizingCamera) {
+                        const dx = e.clientX - initialX;
+                        const dy = e.clientY - initialY;
+
+                        let newSize = Math.max(50, Math.min(initialWidth + dx, initialHeight + dy)); // Maintain aspect ratio, min 50px
+
+                        // Ensure it doesn't grow beyond main video preview
+                        const mainVideoRect = mainVideoPreview.getBoundingClientRect();
+                        const currentCameraRect = cameraOverlayVideo.getBoundingClientRect();
+
+                        newSize = Math.min(newSize, mainVideoRect.width - (currentCameraRect.left - mainVideoRect.left));
+                        newSize = Math.min(newSize, mainVideoRect.height - (currentCameraRect.top - mainVideoRect.top));
+
+                        cameraOverlayVideo.style.width = `${newSize}px`;
+                        cameraOverlayVideo.style.height = `${newSize}px`;
+                    }
+                });
+
+                document.addEventListener('mouseup', () => {
+                    isDraggingCamera = false;
+                    isResizingCamera = false;
+                    cameraOverlayVideo.style.cursor = 'grab';
+                    cameraOverlayVideo.classList.remove('resizing');
+                });
+
+                // Touch events for drag and resize
+                cameraOverlayVideo.addEventListener('touchstart', (e) => {
+                    if (e.target === cameraOverlayVideo) {
+                        isDraggingCamera = true;
+                        const rect = cameraOverlayVideo.getBoundingClientRect();
+                        cameraOffsetX = e.touches[0].clientX - rect.left;
+                        cameraOffsetY = e.touches[0].clientY - rect.top;
+                        e.preventDefault(); // Prevent scrolling
+                    }
+                });
+
+                cameraResizeHandle.addEventListener('touchstart', (e) => {
+                    isResizingCamera = true;
+                    cameraOverlayVideo.classList.add('resizing');
+                    initialX = e.touches[0].clientX;
+                    initialY = e.touches[0].clientY;
+                    initialWidth = cameraOverlayVideo.offsetWidth;
+                    initialHeight = cameraOverlayVideo.offsetHeight;
+                    e.preventDefault();
+                });
+
+                document.addEventListener('touchmove', (e) => {
+                    if (isDraggingCamera && e.touches.length === 1) {
+                        let newLeft = e.touches[0].clientX - cameraOffsetX;
+                        let newTop = e.touches[0].clientY - cameraOffsetY;
+
+                        const mainVideoRect = mainVideoPreview.getBoundingClientRect();
+                        const cameraRect = cameraOverlayVideo.getBoundingClientRect();
+
+                        newLeft = Math.max(mainVideoRect.left, newLeft);
+                        newLeft = Math.min(mainVideoRect.right - cameraRect.width, newLeft);
+                        newTop = Math.max(mainVideoRect.top, newTop);
+                        newTop = Math.min(mainVideoRect.bottom - cameraRect.height, newTop);
+
+                        cameraOverlayVideo.style.left = `${newLeft - mainVideoRect.left}px`;
+                        cameraOverlayVideo.style.top = `${newTop - mainVideoRect.top}px`;
+                        e.preventDefault();
+                    } else if (isResizingCamera && e.touches.length === 1) {
+                        const dx = e.touches[0].clientX - initialX;
+                        const dy = e.touches[0].clientY - initialY;
+
+                        let newSize = Math.max(50, Math.min(initialWidth + dx, initialHeight + dy));
+
+                        const mainVideoRect = mainVideoPreview.getBoundingClientRect();
+                        const currentCameraRect = cameraOverlayVideo.getBoundingClientRect();
+
+                        newSize = Math.min(newSize, mainVideoRect.width - (currentCameraRect.left - mainVideoRect.left));
+                        newSize = Math.min(newSize, mainVideoRect.height - (currentCameraRect.top - mainVideoRect.top));
+
+                        cameraOverlayVideo.style.width = `${newSize}px`;
+                        cameraOverlayVideo.style.height = `${newSize}px`;
+                    }
+                });
+
+                document.addEventListener('touchend', () => {
+                    isDraggingCamera = false;
+                    isResizingCamera = false;
+                    cameraOverlayVideo.classList.remove('resizing');
+                });
+            }
+
+            // Event Listeners
+            recordButton.addEventListener('click', toggleRecording);
+            micToggle.addEventListener('click', toggleMicAudio);
+            systemAudioToggle.addEventListener('click', toggleSystemAudio);
+            cameraToggle.addEventListener('click', toggleCamera);
+            screenshareToggle.addEventListener('click', toggleScreenshare);
+            saveButton.addEventListener('click', saveRecording);
+            shareButton.addEventListener('click', toggleSharePopover);
+
+            // General Settings Button now triggers the main settings popover
+            generalSettingsButton.addEventListener('click', (event) => {
+                event.stopPropagation(); // Prevent this click from immediately bubbling to document and re-hiding
+                settingsPopover.classList.toggle('hidden'); // Toggle visibility of the main settings popover
+                console.log('Settings popover hidden status:', settingsPopover.classList.contains('hidden') ? 'hidden' : 'visible');
+            });
+
+            // Close button for the main settings popover (bottom)
+            closeSettingsPopoverButton.addEventListener('click', () => {
+                settingsPopover.classList.add('hidden');
+            });
+
+            // Top-right close button for the main settings popover
+            topRightCloseSettingsButton.addEventListener('click', () => {
+                settingsPopover.classList.add('hidden');
+            });
+
+            // Camera Settings Popover controls (now part of the general settings popover)
+            toggleDropshadow.addEventListener('change', (e) => {
+                cameraDropshadow = e.target.checked;
+                applyCameraOverlayStyles();
+            });
+            toggleStroke.addEventListener('change', (e) => {
+                cameraStroke = e.target.checked;
+                applyCameraOverlayStyles();
+            });
+            toggleGlow.addEventListener('change', (e) => {
+                cameraGlow = e.target.checked;
+                applyCameraOverlayStyles();
+            });
+            strokeWidthInput.addEventListener('input', (e) => {
+                cameraStrokeWidth = e.target.value;
+                applyCameraOverlayStyles();
+            });
+            strokeColorInput.addEventListener('input', (e) => {
+                cameraStrokeColor = e.target.value;
+                applyCameraOverlayStyles();
+            });
+
+
+            // Close popover when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!sharePopover.contains(e.target) && !shareButton.contains(e.target) && !sharePopover.classList.contains('hidden')) {
+                    sharePopover.classList.add('hidden');
+                }
+                // Close general settings popover if clicked outside, but not on the general settings button itself
+                if (!settingsPopover.contains(e.target) && !generalSettingsButton.contains(e.target) && !settingsPopover.classList.contains('hidden')) {
+                    settingsPopover.classList.add('hidden');
+                }
+            });
+
+            document.querySelectorAll('.share-option').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const platform = e.currentTarget.dataset.platform;
+                    shareOnSocial(platform);
+                });
+            });
+            // Initialize mic button state on load
+            updateButtonUI(micToggle, isMicActive, 'mic', 'mic-off');
+
+            // Window control event listeners
+            minimizeButton.addEventListener('click', () => {
+                showToast('Minimize button clicked! (Functionality not available in browser sandbox)', 'info');
+                // In a native app, you would call a minimize function here.
+            });
+
+            fullscreenButton.addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => {
+                        showToast(`Error attempting to enable full-screen mode: ${err.message} (Full-screen may require user gesture or specific browser settings)`, 'error');
+                    });
+                } else {
+                    document.exitFullscreen();
+                }
+            });
+
+            closeButton.addEventListener('click', () => {
+                showToast('Close button clicked! (Functionality not available in browser sandbox)', 'info');
+                // In a native app, you would call a close function here.
+                // For a web app, you might try window.close(), but it often requires the window to be opened by script.
+                // window.close(); // This often won't work in a sandbox/iframe
+            });
+        });
+    </script>
+</body>
+</html>
