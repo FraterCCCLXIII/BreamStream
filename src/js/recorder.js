@@ -29,43 +29,27 @@ export class Recorder {
 
     /**
      * Starts the recording
-     * @param {boolean} includeMic - Whether to include microphone audio
-     * @param {boolean} includeSystemAudio - Whether to include system audio
+     * @param {MediaStream} screenStream - The screen capture stream
+     * @param {MediaStream} cameraStream - The camera stream
      * @returns {Promise<void>}
      */
-    async startRecording(includeMic, includeSystemAudio) {
+    async startRecording(screenStream, cameraStream) {
         if (this.isRecording) return;
 
         try {
-            // Get screen stream
-            this.screenStream = await navigator.mediaDevices.getDisplayMedia({
-                video: CONFIG.MEDIA.VIDEO_CONSTRAINTS,
-                audio: includeSystemAudio
-            });
-
-            // Get camera stream if needed
-            if (this.cameraVideo.srcObject) {
-                this.cameraStream = this.cameraVideo.srcObject;
-            }
+            this.screenStream = screenStream;
+            this.cameraStream = cameraStream;
 
             // Create canvas stream
             const canvasStream = this.canvas.captureStream(30); // 30 FPS
 
-            // Combine audio tracks if needed
-            const audioTracks = [];
-            if (includeMic && this.cameraStream) {
+            // Add audio track from camera if available
+            if (this.cameraStream) {
                 const micTrack = this.cameraStream.getAudioTracks()[0];
-                if (micTrack) audioTracks.push(micTrack);
+                if (micTrack) {
+                    canvasStream.addTrack(micTrack);
+                }
             }
-            if (includeSystemAudio && this.screenStream) {
-                const systemTrack = this.screenStream.getAudioTracks()[0];
-                if (systemTrack) audioTracks.push(systemTrack);
-            }
-
-            // Add audio tracks to canvas stream
-            audioTracks.forEach(track => {
-                canvasStream.addTrack(track);
-            });
 
             // Create MediaRecorder
             this.mediaRecorder = new MediaRecorder(canvasStream, {
@@ -77,11 +61,12 @@ export class Recorder {
             this.mediaRecorder.ondataavailable = this.handleDataAvailable;
             this.mediaRecorder.onstop = () => {
                 this.isRecording = false;
+                this.cleanup();
             };
 
             // Start recording
             this.recordedChunks = [];
-            this.mediaRecorder.start();
+            this.mediaRecorder.start(1000); // Collect data every second
             this.isRecording = true;
 
             // Handle screen sharing end
@@ -92,6 +77,7 @@ export class Recorder {
             };
 
         } catch (error) {
+            this.cleanup();
             throw new Error(`Failed to start recording: ${error.message}`);
         }
     }
@@ -103,9 +89,11 @@ export class Recorder {
         if (!this.isRecording || !this.mediaRecorder) return;
 
         try {
-            this.mediaRecorder.stop();
-            this.cleanup();
+            if (this.mediaRecorder.state === 'recording') {
+                this.mediaRecorder.stop();
+            }
         } catch (error) {
+            this.cleanup();
             throw new Error(`Failed to stop recording: ${error.message}`);
         }
     }
@@ -144,11 +132,19 @@ export class Recorder {
      */
     cleanup() {
         if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-            this.mediaRecorder.stop();
+            try {
+                this.mediaRecorder.stop();
+            } catch (error) {
+                console.error('Error stopping media recorder:', error);
+            }
         }
 
-        stopMediaStream(this.screenStream);
-        this.screenStream = null;
+        // Stop all tracks
+        if (this.screenStream) {
+            this.screenStream.getTracks().forEach(track => track.stop());
+            this.screenStream = null;
+        }
+
         this.mediaRecorder = null;
         this.isRecording = false;
     }

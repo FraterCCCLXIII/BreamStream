@@ -2,7 +2,7 @@ import { CONFIG } from './config.js';
 import { CanvasManager } from './canvas.js';
 import { Recorder } from './recorder.js';
 import { UIManager } from './ui.js';
-import { Navigation } from './components/Navigation.js';
+import { Countdown } from './components/Countdown.js';
 import { checkBrowserSupport } from './utils.js';
 
 /**
@@ -18,19 +18,24 @@ export class ScreenRecorderApp {
             throw new Error('Your browser does not support the required features for screen recording.');
         }
 
-        // Get DOM elements
+        // Initialize elements
         this.elements = {
             canvas: document.getElementById('mainCanvas'),
             screenVideo: document.getElementById('screenSource'),
             cameraVideo: document.getElementById('cameraSource'),
-            startButton: document.getElementById('startButton'),
-            stopButton: document.getElementById('stopButton'),
+            recordButton: document.getElementById('recordButton'),
             saveButton: document.getElementById('saveButton'),
             previewButton: document.getElementById('previewScreenButton'),
             micToggle: document.getElementById('micAudioToggle'),
             systemAudioToggle: document.getElementById('systemAudioToggle'),
-            statusMessage: document.getElementById('statusMessage')
+            settingsButton: document.getElementById('settingsButton')
         };
+
+        // Initialize video elements
+        this.elements.screenVideo.muted = true;
+        this.elements.cameraVideo.muted = true;
+        this.elements.screenVideo.style.display = 'block';
+        this.elements.cameraVideo.style.display = 'block';
 
         // Initialize components
         this.canvasManager = new CanvasManager(
@@ -38,97 +43,168 @@ export class ScreenRecorderApp {
             this.elements.screenVideo,
             this.elements.cameraVideo
         );
-
         this.recorder = new Recorder(
             this.elements.canvas,
             this.elements.screenVideo,
             this.elements.cameraVideo
         );
-
-        this.uiManager = new UIManager(this.elements);
-
-        // Initialize navigation with settings callback
-        this.navigation = new Navigation({
-            onSettingsChange: (settings) => {
-                this.canvasManager.updateEffects(settings);
+        this.ui = new UIManager(this.elements);
+        this.countdown = new Countdown({
+            onComplete: () => {
+                // Start recording when countdown completes
+                document.dispatchEvent(new CustomEvent('recordingStateChanged', {
+                    detail: { isRecording: true }
+                }));
             }
         });
+
+        // Initialize settings
+        this.settings = {
+            dropShadow: true,
+            stroke: true,
+            strokeWidth: 2,
+            strokeColor: '#FFFFFF',
+            pulseEffect: false
+        };
 
         // Bind methods
         this.startRecording = this.startRecording.bind(this);
         this.stopRecording = this.stopRecording.bind(this);
-        this.saveRecording = this.saveRecording.bind(this);
         this.startScreenPreview = this.startScreenPreview.bind(this);
         this.startCameraPreview = this.startCameraPreview.bind(this);
         this.handleError = this.handleError.bind(this);
+        this.handleSettingsChange = this.handleSettingsChange.bind(this);
+        this.handleRecordingStateChange = this.handleRecordingStateChange.bind(this);
+        this.handleCameraStateChange = this.handleCameraStateChange.bind(this);
 
         // Set up event listeners
-        this.setupEventListeners();
+        this.elements.previewButton.addEventListener('click', this.startScreenPreview);
+        this.elements.settingsButton.addEventListener('click', this.handleSettingsClick);
+        document.addEventListener('recordingStateChanged', this.handleRecordingStateChange);
+        document.addEventListener('settingsChange', this.handleSettingsChange);
+        document.addEventListener('cameraStateChanged', this.handleCameraStateChange);
+        document.addEventListener('startCountdown', () => {
+            this.countdown.start();
+        });
+
+        // Initialize settings UI
+        this.initializeSettingsUI();
 
         // Start camera preview by default
         this.startCameraPreview();
     }
 
     /**
-     * Sets up event listeners for UI elements
+     * Initializes the settings UI with current values
      */
-    setupEventListeners() {
-        this.elements.startButton.addEventListener('click', this.startRecording);
-        this.elements.stopButton.addEventListener('click', this.stopRecording);
-        this.elements.saveButton.addEventListener('click', this.saveRecording);
-        this.elements.previewButton.addEventListener('click', this.startScreenPreview);
+    initializeSettingsUI() {
+        const dropShadowToggle = document.getElementById('dropShadowToggle');
+        const strokeToggle = document.getElementById('strokeToggle');
+        const strokeWidth = document.getElementById('strokeWidth');
+        const strokeColor = document.getElementById('strokeColor');
+        const pulseEffectToggle = document.getElementById('pulseEffectToggle');
+
+        // Set initial values
+        dropShadowToggle.checked = this.settings.dropShadow;
+        strokeToggle.checked = this.settings.stroke;
+        strokeWidth.value = this.settings.strokeWidth;
+        strokeColor.value = this.settings.strokeColor;
+        pulseEffectToggle.checked = this.settings.pulseEffect;
+
+        // Update stroke options visibility
+        const updateStrokeOptions = () => {
+            const isEnabled = strokeToggle.checked;
+            document.getElementById('strokeWidthContainer').style.display = isEnabled ? 'block' : 'none';
+            document.getElementById('strokeColorContainer').style.display = isEnabled ? 'block' : 'none';
+        };
+        updateStrokeOptions();
     }
 
     /**
-     * Starts the recording process
+     * Handles settings button click
+     * @param {Event} e - The click event
      */
-    async startRecording() {
+    handleSettingsClick(e) {
+        e.stopPropagation();
+        const settingsPopover = document.getElementById('settingsPopover');
+        settingsPopover.classList.toggle('hidden');
+    }
+
+    /**
+     * Handles settings changes
+     * @param {CustomEvent} event - The settings change event
+     */
+    handleSettingsChange(event) {
+        const { setting, value } = event.detail;
+        this.settings[setting] = value;
+        this.canvasManager.updateEffects(this.settings);
+    }
+
+    /**
+     * Handles recording state changes
+     * @param {CustomEvent} event - The recording state change event
+     */
+    async handleRecordingStateChange(event) {
+        console.log('Recording state change event received:', event.detail);
         try {
-            this.uiManager.setLoading(true);
-            const { includeMic, includeSystemAudio } = this.uiManager.audioSettings;
-            
-            await this.recorder.startRecording(includeMic, includeSystemAudio);
-            this.updateUIState();
-            
-            this.uiManager.updateStatus('Recording in progress...', CONFIG.UI.STATUS_TYPES.SUCCESS);
+            if (event.detail.isRecording) {
+                console.log('Starting recording...');
+                await this.startRecording();
+            } else {
+                console.log('Stopping recording...');
+                await this.stopRecording();
+            }
         } catch (error) {
+            console.error('Error in handleRecordingStateChange:', error);
             this.handleError(error);
-        } finally {
-            this.uiManager.setLoading(false);
         }
     }
 
     /**
-     * Stops the recording process
+     * Starts recording
+     */
+    async startRecording() {
+        console.log('startRecording called');
+        try {
+            this.ui.setLoading(true);
+            const { includeMic, includeSystemAudio } = this.ui.audioSettings;
+            console.log('Audio settings:', { includeMic, includeSystemAudio });
+            
+            if (!this.screenStream) {
+                throw new Error('No screen stream available');
+            }
+            console.log('Screen stream available:', !!this.screenStream);
+            console.log('Camera stream available:', !!this.cameraStream);
+            
+            await this.recorder.startRecording({
+                screenStream: this.screenStream,
+                cameraStream: this.cameraStream,
+                includeMic,
+                includeSystemAudio
+            });
+
+            console.log('Recording started successfully');
+            this.ui.updateStatus('Recording started', CONFIG.UI.STATUS_TYPES.SUCCESS);
+        } catch (error) {
+            console.error('Error in startRecording:', error);
+            this.handleError(error);
+        } finally {
+            this.ui.setLoading(false);
+        }
+    }
+
+    /**
+     * Stops recording
      */
     async stopRecording() {
         try {
-            this.uiManager.setLoading(true);
-            this.recorder.stopRecording();
-            this.updateUIState();
-            
-            this.uiManager.updateStatus('Recording stopped. Click "Save Recording" to download.', CONFIG.UI.STATUS_TYPES.INFO);
+            this.ui.setLoading(true);
+            await this.recorder.stopRecording();
+            this.ui.updateStatus('Recording stopped', CONFIG.UI.STATUS_TYPES.SUCCESS);
         } catch (error) {
             this.handleError(error);
         } finally {
-            this.uiManager.setLoading(false);
-        }
-    }
-
-    /**
-     * Saves the recorded video
-     */
-    async saveRecording() {
-        try {
-            this.uiManager.setLoading(true);
-            this.recorder.saveRecording();
-            this.updateUIState();
-            
-            this.uiManager.updateStatus('Recording saved successfully!', CONFIG.UI.STATUS_TYPES.SUCCESS);
-        } catch (error) {
-            this.handleError(error);
-        } finally {
-            this.uiManager.setLoading(false);
+            this.ui.setLoading(false);
         }
     }
 
@@ -136,30 +212,39 @@ export class ScreenRecorderApp {
      * Starts the screen preview
      */
     async startScreenPreview() {
+        console.log('startScreenPreview called');
         try {
-            this.uiManager.setLoading(true);
-            const { includeSystemAudio } = this.uiManager.audioSettings;
+            this.ui.setLoading(true);
+            const { includeSystemAudio } = this.ui.audioSettings;
+            console.log('System audio enabled:', includeSystemAudio);
             
             const stream = await navigator.mediaDevices.getDisplayMedia({
                 video: CONFIG.MEDIA.VIDEO_CONSTRAINTS,
                 audio: includeSystemAudio
             });
+            console.log('Screen stream obtained:', !!stream);
 
+            this.screenStream = stream;
             this.elements.screenVideo.srcObject = stream;
             await this.elements.screenVideo.play();
+            console.log('Screen video playing:', this.elements.screenVideo.readyState);
             
+            this.elements.screenVideo.style.display = 'block';
+            this.canvasManager.updateCanvasDimensions();
             this.canvasManager.startDrawing();
             this.updateUIState();
             
-            // Handle screen sharing end
             stream.getVideoTracks()[0].onended = () => {
+                console.log('Screen sharing ended');
+                this.screenStream = null;
                 this.elements.screenVideo.srcObject = null;
                 this.updateUIState();
             };
         } catch (error) {
+            console.error('Error in startScreenPreview:', error);
             this.handleError(error);
         } finally {
-            this.uiManager.setLoading(false);
+            this.ui.setLoading(false);
         }
     }
 
@@ -167,24 +252,34 @@ export class ScreenRecorderApp {
      * Starts the camera preview
      */
     async startCameraPreview() {
+        console.log('startCameraPreview called');
         try {
-            this.uiManager.setLoading(true);
-            const { includeMic } = this.uiManager.audioSettings;
-            
             const stream = await navigator.mediaDevices.getUserMedia({
-                ...CONFIG.MEDIA.CAMERA_CONSTRAINTS,
-                audio: includeMic
+                video: {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: 'user'
+                }
             });
+            console.log('Camera stream obtained:', !!stream);
 
+            this.cameraStream = stream;
             this.elements.cameraVideo.srcObject = stream;
             await this.elements.cameraVideo.play();
+            console.log('Camera video playing:', this.elements.cameraVideo.readyState);
             
+            this.elements.cameraVideo.style.display = 'block';
+            this.canvasManager.updateCanvasDimensions();
             this.canvasManager.startDrawing();
             this.updateUIState();
         } catch (error) {
+            console.error('Error in startCameraPreview:', error);
             this.handleError(error);
+            document.dispatchEvent(new CustomEvent('cameraStateChanged', {
+                detail: { enabled: false }
+            }));
         } finally {
-            this.uiManager.setLoading(false);
+            this.ui.setLoading(false);
         }
     }
 
@@ -199,8 +294,8 @@ export class ScreenRecorderApp {
             isCameraPreviewing: !!this.elements.cameraVideo.srcObject
         };
 
-        this.uiManager.updateButtonStates(state);
-        this.uiManager.updatePreviewState(state.isScreenPreviewing, state.isCameraPreviewing);
+        this.ui.updateButtonStates(state);
+        this.ui.updatePreviewState(state.isScreenPreviewing, state.isCameraPreviewing);
     }
 
     /**
@@ -208,7 +303,8 @@ export class ScreenRecorderApp {
      * @param {Error} error - The error to handle
      */
     handleError(error) {
-        this.uiManager.handleError(error);
+        console.error('Application error:', error);
+        this.ui.handleError(error);
         this.updateUIState();
     }
 
@@ -218,12 +314,77 @@ export class ScreenRecorderApp {
     cleanup() {
         this.canvasManager.cleanup();
         this.recorder.cleanup();
-        this.navigation.cleanup();
+        this.ui.cleanup();
+        this.countdown.cleanup();
+        
+        // Stop all tracks
+        if (this.elements.screenVideo.srcObject) {
+            this.elements.screenVideo.srcObject.getTracks().forEach(track => track.stop());
+        }
+        if (this.elements.cameraVideo.srcObject) {
+            this.elements.cameraVideo.srcObject.getTracks().forEach(track => track.stop());
+        }
         
         // Remove event listeners
-        this.elements.startButton.removeEventListener('click', this.startRecording);
-        this.elements.stopButton.removeEventListener('click', this.stopRecording);
-        this.elements.saveButton.removeEventListener('click', this.saveRecording);
         this.elements.previewButton.removeEventListener('click', this.startScreenPreview);
+        this.elements.settingsButton.removeEventListener('click', this.handleSettingsClick);
+        document.removeEventListener('recordingStateChanged', this.handleRecordingStateChange);
+        document.removeEventListener('settingsChange', this.handleSettingsChange);
+        document.removeEventListener('cameraStateChanged', this.handleCameraStateChange);
+    }
+
+    /**
+     * Handles camera state changes
+     * @param {CustomEvent} event - The camera state change event
+     */
+    async handleCameraStateChange(event) {
+        try {
+            if (event.detail.enabled) {
+                await this.startCameraPreview();
+            } else {
+                if (this.cameraStream) {
+                    this.cameraStream.getTracks().forEach(track => track.stop());
+                    this.cameraStream = null;
+                    this.elements.cameraVideo.srcObject = null;
+                    this.updateUIState();
+                }
+            }
+        } catch (error) {
+            this.handleError(error);
+            // Reset camera toggle state if there was an error
+            document.dispatchEvent(new CustomEvent('cameraStateChanged', {
+                detail: { enabled: false }
+            }));
+        }
+    }
+
+    /**
+     * Saves the recorded video
+     * @returns {Promise<void>}
+     */
+    async saveRecording() {
+        try {
+            this.ui.setLoading(true);
+            if (!this.recorder.recordedData || this.recorder.recordedData.length === 0) {
+                throw new Error('No recording data available to save');
+            }
+
+            const blob = new Blob(this.recorder.recordedData, { type: CONFIG.MEDIA.RECORDING_MIME_TYPE });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `recording-${new Date().toISOString()}.webm`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            this.ui.updateStatus('Recording saved successfully', CONFIG.UI.STATUS_TYPES.SUCCESS);
+        } catch (error) {
+            console.error('Error saving recording:', error);
+            this.handleError(error);
+        } finally {
+            this.ui.setLoading(false);
+        }
     }
 } 

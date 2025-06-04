@@ -19,7 +19,28 @@ export class CanvasManager {
         this.effects = {
             dropShadow: true,
             stroke: true,
+            strokeWidth: 2,
+            strokeColor: '#FFFFFF',
             pulseEffect: false
+        };
+        this.pulseAnimation = null;
+        this.pulsePhase = 0;
+
+        // Camera preview position and size
+        this.cameraPreview = {
+            x: 0, // Will be set in updateCanvasDimensions
+            y: 0, // Will be set in updateCanvasDimensions
+            size: 200, // Default size
+            minSize: 100,
+            maxSize: 400,
+            isDragging: false,
+            isResizing: false,
+            dragStartX: 0,
+            dragStartY: 0,
+            resizeStartX: 0,
+            resizeStartY: 0,
+            resizeStartSize: 0,
+            aspectRatio: 1 // Maintain 1:1 aspect ratio
         };
 
         // Bind methods
@@ -27,17 +48,188 @@ export class CanvasManager {
         this.startDrawing = this.startDrawing.bind(this);
         this.stopDrawing = this.stopDrawing.bind(this);
         this.updateEffects = this.updateEffects.bind(this);
+        this.handleMouseDown = this.handleMouseDown.bind(this);
+        this.handleMouseMove = this.handleMouseMove.bind(this);
+        this.handleMouseUp = this.handleMouseUp.bind(this);
+
+        // Set up mouse event listeners
+        this.setupMouseEvents();
     }
 
     /**
-     * Updates the camera effects
-     * @param {Object} effects - The effects to apply
-     * @param {boolean} effects.dropShadow - Whether to show drop shadow
-     * @param {boolean} effects.stroke - Whether to show stroke
-     * @param {boolean} effects.pulseEffect - Whether to show pulse effect
+     * Sets up mouse event listeners for drag and resize
+     */
+    setupMouseEvents() {
+        this.canvas.addEventListener('mousedown', this.handleMouseDown);
+        document.addEventListener('mousemove', this.handleMouseMove);
+        document.addEventListener('mouseup', this.handleMouseUp);
+    }
+
+    /**
+     * Handles mouse down events
+     * @param {MouseEvent} e - The mouse event
+     */
+    handleMouseDown(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+
+        // Check if click is within camera preview circle
+        const dx = x - this.cameraPreview.x;
+        const dy = y - this.cameraPreview.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const radius = this.cameraPreview.size / 2;
+
+        // Check if click is near the edge (for resizing)
+        const edgeThreshold = 10;
+        if (Math.abs(distance - radius) < edgeThreshold) {
+            this.cameraPreview.isResizing = true;
+            this.cameraPreview.resizeStartX = x;
+            this.cameraPreview.resizeStartY = y;
+            this.cameraPreview.resizeStartSize = this.cameraPreview.size;
+            this.canvas.style.cursor = 'nwse-resize';
+        }
+        // Check if click is inside the circle (for dragging)
+        else if (distance < radius) {
+            this.cameraPreview.isDragging = true;
+            this.cameraPreview.dragStartX = x - this.cameraPreview.x;
+            this.cameraPreview.dragStartY = y - this.cameraPreview.y;
+            this.canvas.style.cursor = 'move';
+        }
+    }
+
+    /**
+     * Handles mouse move events
+     * @param {MouseEvent} e - The mouse event
+     */
+    handleMouseMove(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+
+        // Update cursor style based on position
+        if (!this.cameraPreview.isDragging && !this.cameraPreview.isResizing) {
+            const dx = x - this.cameraPreview.x;
+            const dy = y - this.cameraPreview.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const radius = this.cameraPreview.size / 2;
+            
+            if (Math.abs(distance - radius) < 10) {
+                this.canvas.style.cursor = 'nwse-resize';
+            } else if (distance < radius) {
+                this.canvas.style.cursor = 'move';
+            } else {
+                this.canvas.style.cursor = 'default';
+            }
+        }
+
+        // Handle dragging
+        if (this.cameraPreview.isDragging) {
+            const newX = x - this.cameraPreview.dragStartX;
+            const newY = y - this.cameraPreview.dragStartY;
+            
+            // Keep within canvas bounds with padding
+            const padding = Math.min(this.canvas.width, this.canvas.height) * CONFIG.CANVAS.CAMERA_OVERLAY.PADDING_RATIO;
+            this.cameraPreview.x = Math.max(this.cameraPreview.size / 2 + padding, 
+                Math.min(newX, this.canvas.width - this.cameraPreview.size / 2 - padding));
+            this.cameraPreview.y = Math.max(this.cameraPreview.size / 2 + padding, 
+                Math.min(newY, this.canvas.height - this.cameraPreview.size / 2 - padding));
+        }
+
+        // Handle resizing
+        if (this.cameraPreview.isResizing) {
+            const dx = x - this.cameraPreview.resizeStartX;
+            const dy = y - this.cameraPreview.resizeStartY;
+            const delta = Math.max(dx, dy);
+            
+            // Calculate new size based on screen dimensions
+            const minDimension = Math.min(this.canvas.width, this.canvas.height);
+            const maxSize = Math.min(
+                minDimension * CONFIG.CANVAS.CAMERA_OVERLAY.SIZE_RATIO,
+                this.cameraPreview.maxSize
+            );
+            
+            const newSize = Math.max(this.cameraPreview.minSize,
+                Math.min(maxSize,
+                    this.cameraPreview.resizeStartSize + delta * 2));
+
+            // Update size while maintaining aspect ratio
+            this.cameraPreview.size = newSize;
+
+            // Ensure the preview stays within canvas bounds with padding
+            const padding = Math.min(this.canvas.width, this.canvas.height) * CONFIG.CANVAS.CAMERA_OVERLAY.PADDING_RATIO;
+            const maxX = this.canvas.width - newSize / 2 - padding;
+            const maxY = this.canvas.height - newSize / 2 - padding;
+            this.cameraPreview.x = Math.min(this.cameraPreview.x, maxX);
+            this.cameraPreview.y = Math.min(this.cameraPreview.y, maxY);
+        }
+    }
+
+    /**
+     * Handles mouse up events
+     */
+    handleMouseUp() {
+        this.cameraPreview.isDragging = false;
+        this.cameraPreview.isResizing = false;
+        this.canvas.style.cursor = 'default';
+    }
+
+    /**
+     * Updates the effects settings
+     * @param {Object} effects - The effects settings
      */
     updateEffects(effects) {
-        this.effects = { ...effects };
+        this.effects = { ...this.effects, ...effects };
+        this.draw(); // Redraw with new settings
+    }
+
+    /**
+     * Draws the camera preview with effects
+     * @param {number} x - X position
+     * @param {number} y - Y position
+     * @param {number} width - Width
+     * @param {number} height - Height
+     */
+    drawCameraPreview(x, y, width, height) {
+        if (!this.cameraVideo || !this.cameraVideo.srcObject) return;
+
+        // Save context state
+        this.ctx.save();
+
+        // Apply drop shadow if enabled
+        if (this.effects.dropShadow) {
+            this.ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+            this.ctx.shadowBlur = 10;
+            this.ctx.shadowOffsetX = 4;
+            this.ctx.shadowOffsetY = 4;
+        }
+
+        // Draw the video
+        this.ctx.drawImage(this.cameraVideo, x, y, width, height);
+
+        // Apply stroke if enabled
+        if (this.effects.stroke) {
+            this.ctx.strokeStyle = this.effects.strokeColor;
+            this.ctx.lineWidth = this.effects.strokeWidth;
+            this.ctx.strokeRect(x, y, width, height);
+        }
+
+        // Apply pulse effect if enabled
+        if (this.effects.pulseEffect) {
+            const pulseIntensity = Math.sin(this.pulsePhase) * 0.5 + 0.5;
+            this.ctx.strokeStyle = this.effects.strokeColor;
+            this.ctx.lineWidth = this.effects.strokeWidth * (1 + pulseIntensity * 0.5);
+            this.ctx.strokeRect(x, y, width, height);
+        }
+
+        // Restore context state
+        this.ctx.restore();
     }
 
     /**
@@ -46,7 +238,32 @@ export class CanvasManager {
     startDrawing() {
         if (this.isDrawing) return;
         this.isDrawing = true;
-        this.drawFrame();
+
+        const draw = () => {
+            if (!this.isDrawing) return;
+
+            // Clear canvas
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+            // Draw screen content
+            this.drawScreen();
+
+            // Draw camera preview if available
+            if (this.cameraVideo && this.cameraVideo.srcObject) {
+                const { x, y, width, height } = this.cameraPreview;
+                this.drawCameraPreview(x, y, width, height);
+            }
+
+            // Update pulse phase if effect is enabled
+            if (this.effects.pulseEffect) {
+                this.pulsePhase += 0.05;
+            }
+
+            // Request next frame
+            requestAnimationFrame(draw);
+        };
+
+        draw();
     }
 
     /**
@@ -68,11 +285,42 @@ export class CanvasManager {
         if (this.screenVideo.srcObject && 
             this.screenVideo.videoWidth && 
             this.screenVideo.videoHeight) {
+            // Set canvas size to match screen video dimensions exactly
+            const container = this.canvas.parentElement;
+            const containerRect = container.getBoundingClientRect();
+            
+            // Calculate scale to fit container while maintaining aspect ratio
+            const scaleX = containerRect.width / this.screenVideo.videoWidth;
+            const scaleY = containerRect.height / this.screenVideo.videoHeight;
+            const scale = Math.min(scaleX, scaleY);
+            
+            // Set canvas size to match screen video dimensions
             this.canvas.width = this.screenVideo.videoWidth;
             this.canvas.height = this.screenVideo.videoHeight;
+            
+            // Scale canvas display size to fit container
+            this.canvas.style.width = `${this.screenVideo.videoWidth * scale}px`;
+            this.canvas.style.height = `${this.screenVideo.videoHeight * scale}px`;
+            
+            // Update camera preview size based on screen dimensions
+            const minDimension = Math.min(this.canvas.width, this.canvas.height);
+            this.cameraPreview.size = Math.min(
+                minDimension * CONFIG.CANVAS.CAMERA_OVERLAY.SIZE_RATIO,
+                this.cameraPreview.maxSize
+            );
         } else {
+            // Default dimensions when no screen video
             this.canvas.width = CONFIG.CANVAS.DEFAULT_WIDTH;
             this.canvas.height = CONFIG.CANVAS.DEFAULT_HEIGHT;
+            this.canvas.style.width = '100%';
+            this.canvas.style.height = '100%';
+        }
+
+        // Set initial camera preview position to bottom left corner if not set
+        if (!this.cameraPreview.x || !this.cameraPreview.y) {
+            const padding = Math.min(this.canvas.width, this.canvas.height) * CONFIG.CANVAS.CAMERA_OVERLAY.PADDING_RATIO;
+            this.cameraPreview.x = this.cameraPreview.size / 2 + padding;
+            this.cameraPreview.y = this.canvas.height - this.cameraPreview.size / 2 - padding;
         }
     }
 
@@ -88,6 +336,7 @@ export class CanvasManager {
 
         if (this.screenVideo.readyState >= HTMLMediaElement.HAVE_METADATA && 
             !this.screenVideo.paused) {
+            // Draw screen at 100% size
             this.ctx.drawImage(
                 this.screenVideo, 
                 0, 0, 
@@ -97,80 +346,6 @@ export class CanvasManager {
         } else {
             this.drawDebugMessage('Screen not available');
         }
-    }
-
-    /**
-     * Draws the camera overlay
-     */
-    drawCameraOverlay() {
-        if (!this.cameraVideo.srcObject || 
-            this.cameraVideo.readyState < HTMLMediaElement.HAVE_METADATA || 
-            this.cameraVideo.paused) {
-            return;
-        }
-
-        const minDim = Math.min(this.canvas.width, this.canvas.height);
-        const overlaySize = minDim * CONFIG.CANVAS.CAMERA_OVERLAY.SIZE_RATIO;
-        const padding = minDim * CONFIG.CANVAS.CAMERA_OVERLAY.PADDING_RATIO;
-        
-        // Position in bottom-left corner
-        const x = padding;
-        const y = this.canvas.height - overlaySize - padding;
-
-        // Calculate source dimensions for square crop
-        const videoW = this.cameraVideo.videoWidth;
-        const videoH = this.cameraVideo.videoHeight;
-        const side = Math.min(videoW, videoH);
-        const sx = (videoW - side) / 2;
-        const sy = (videoH - side) / 2;
-
-        // Draw circular camera overlay with effects
-        this.ctx.save();
-
-        // Apply drop shadow if enabled
-        if (this.effects.dropShadow) {
-            this.ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-            this.ctx.shadowBlur = 10;
-            this.ctx.shadowOffsetX = 2;
-            this.ctx.shadowOffsetY = 2;
-        }
-
-        // Create the circular path
-        this.ctx.beginPath();
-        this.ctx.arc(
-            x + overlaySize / 2,
-            y + overlaySize / 2,
-            overlaySize / 2,
-            0,
-            Math.PI * 2,
-            false
-        );
-        this.ctx.closePath();
-
-        // Apply stroke if enabled
-        if (this.effects.stroke) {
-            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-            this.ctx.lineWidth = 2;
-            this.ctx.stroke();
-        }
-
-        // Apply pulse effect if enabled
-        if (this.effects.pulseEffect) {
-            this.ctx.shadowColor = 'rgba(255, 255, 255, 0.7)';
-            this.ctx.shadowBlur = 15;
-            this.ctx.shadowOffsetX = 0;
-            this.ctx.shadowOffsetY = 0;
-        }
-
-        // Clip and draw the camera feed
-        this.ctx.clip();
-        this.ctx.drawImage(
-            this.cameraVideo,
-            sx, sy, side, side,
-            x, y, overlaySize, overlaySize
-        );
-        
-        this.ctx.restore();
     }
 
     /**
@@ -209,5 +384,10 @@ export class CanvasManager {
     cleanup() {
         this.stopDrawing();
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Remove mouse event listeners
+        this.canvas.removeEventListener('mousedown', this.handleMouseDown);
+        document.removeEventListener('mousemove', this.handleMouseMove);
+        document.removeEventListener('mouseup', this.handleMouseUp);
     }
 } 

@@ -4,141 +4,729 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Beam Stream - A modern web-based screen recording application">
-    <title>Beam Stream - Screen & Camera Recorder</title>
-    
-    <!-- Tailwind CSS -->
+    <title>Beam Stream</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Custom styles -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Custom styles for specific elements not easily done with direct Tailwind classes */
-        body {
-            font-family: "Inter", system-ui, -apple-system, sans-serif;
+        :root {
+            --primary: #0E71EB;
+            --primary-dark: #0B5BC4;
+            --danger: #DC2626;
+            --success: #059669;
+            --background: #1A1A1A;
+            --surface: #2D2D2D;
+            --text: #FFFFFF;
+            --text-secondary: #A3A3A3;
         }
 
-        /* Ensure canvas fills its parent and maintains aspect ratio */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .canvas-container {
+            position: relative;
+            width: 100%;
+            height: calc(100vh - 180px);
+            background-color: var(--surface);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
         #mainCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100%;
-            display: block;
+            z-index: 2;
+        }
+
+        #screenSource, #cameraSource {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             object-fit: contain;
+            z-index: 1;
+            background-color: var(--surface);
+            display: none; /* Initially hidden, shown when streams are active */
         }
 
-        /* Custom styling for the circular camera overlay appearance */
-        .camera-overlay-hidden {
-            display: none; /* This video element is only used as a source for drawing on canvas */
+        #screenSource.active, #cameraSource.active {
+            display: block;
         }
 
-        /* Smooth transitions for all interactive elements */
-        button, input[type="checkbox"] {
-            transition: all 0.2s ease-in-out;
+        .control-button {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            background-color: var(--surface);
+            color: var(--text);
+            border: none;
+            cursor: pointer;
         }
 
-        /* Custom scrollbar for better UX */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+        .control-button:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            transform: scale(1.05);
         }
 
-        ::-webkit-scrollbar-track {
-            background: #f1f1f1;
+        .control-button.active {
+            background-color: var(--danger);
+            color: white;
+        }
+
+        .control-button.toggle-active {
+            color: var(--text);
+        }
+
+        .control-button.toggle-inactive {
+            color: var(--text-secondary);
+        }
+
+        .control-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .control-button svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        .info-button {
+            position: relative;
+        }
+
+        .info-popover {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: var(--surface);
+            border-radius: 8px;
+            padding: 16px;
+            width: 300px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            margin-bottom: 8px;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s ease;
+        }
+
+        .info-button:hover .info-popover {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .info-popover::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 8px;
+            border-style: solid;
+            border-color: var(--surface) transparent transparent transparent;
+        }
+
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            border-radius: 6px;
+            transition: background-color 0.2s ease;
+            cursor: pointer;
+        }
+
+        .checkbox-wrapper:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .custom-checkbox {
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--text-secondary);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+
+        .custom-checkbox.checked {
+            background-color: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .custom-checkbox svg {
+            width: 12px;
+            height: 12px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .custom-checkbox.checked svg {
+            opacity: 1;
+        }
+
+        input[type="checkbox"] {
+            display: none;
+        }
+
+        .status-message {
+            display: none;
+        }
+
+        /* Notification styles */
+        .notification {
+            position: fixed;
+            top: -100px; /* Start off-screen */
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: var(--surface);
+            border-radius: 8px;
+            padding: 12px 16px;
+            min-width: 300px;
+            max-width: 90%;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            z-index: 1000;
+            transition: top 0.3s ease-in-out;
+        }
+
+        .notification.show {
+            top: 20px;
+        }
+
+        .notification-content {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+        }
+
+        .notification-icon {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+
+        .notification-message {
+            font-size: 14px;
+            color: var(--text);
+            margin: 0;
+        }
+
+        .notification-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .notification-close:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: var(--text);
+        }
+
+        .notification.success {
+            border-left: 4px solid var(--success);
+        }
+
+        .notification.error {
+            border-left: 4px solid var(--danger);
+        }
+
+        .notification.info {
+            border-left: 4px solid var(--primary);
+        }
+
+        /* Range input styling */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: var(--surface);
+            border-radius: 4px;
+            height: 4px;
+            outline: none;
+            width: 100%;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: var(--primary);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: var(--primary);
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s ease;
+        }
+
+        input[type="range"]::-moz-range-thumb:hover {
+            transform: scale(1.1);
+        }
+
+        /* Color input styling */
+        input[type="color"] {
+            -webkit-appearance: none;
+            appearance: none;
+            padding: 0;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+        }
+
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+
+        input[type="color"]::-webkit-color-swatch {
+            border: none;
             border-radius: 4px;
         }
 
-        ::-webkit-scrollbar-thumb {
-            background: #888;
+        input[type="color"]::-moz-color-swatch {
+            border: none;
             border-radius: 4px;
         }
 
-        ::-webkit-scrollbar-thumb:hover {
-            background: #666;
+        /* Camera toggle specific styles */
+        .control-button.toggle-active .camera-icon {
+            color: var(--text);
+        }
+
+        .control-button.toggle-inactive .camera-icon {
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+
+        /* Record button specific styles */
+        .control-button.active .record-icon {
+            color: var(--danger);
+        }
+
+        .control-button.active .stop-icon {
+            color: var(--danger);
+        }
+
+        /* Toggle button specific styles */
+        .control-button.toggle-active {
+            color: var(--text);
+        }
+
+        .control-button.toggle-inactive {
+            color: var(--text-secondary);
+        }
+
+        .control-button.toggle-active i {
+            color: var(--text);
+        }
+
+        .control-button.toggle-inactive i {
+            color: var(--text-secondary);
+        }
+
+        .control-button.toggle-active .mic-icon,
+        .control-button.toggle-active .speaker-icon,
+        .control-button.toggle-active .camera-icon {
+            color: var(--text);
+        }
+
+        .control-button.toggle-inactive .mic-icon,
+        .control-button.toggle-inactive .speaker-icon,
+        .control-button.toggle-inactive .camera-icon,
+        .control-button.toggle-inactive .camera-off-icon {
+            color: var(--text-secondary);
+        }
+
+        #settingsPopover {
+            background-color: var(--surface);
+            border: 1px solid var(--text-secondary);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        #settingsPopover .px-4 {
+            background-color: var(--surface);
         }
     </style>
 </head>
-<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen flex items-center justify-center p-4 sm:p-6 md:p-8">
-    <div class="container bg-white p-6 sm:p-8 md:p-10 rounded-2xl shadow-xl text-center w-full max-w-5xl border border-gray-200">
-        <header class="mb-6 sm:mb-8">
-            <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-900">Beam Stream</h1>
-        </header>
-
-        <main>
-            <!-- Video Preview Container -->
-            <div class="video-container relative w-full aspect-video bg-gray-900 rounded-xl overflow-hidden mb-6 sm:mb-8 md:mb-10 shadow-inner border border-gray-700">
-                <canvas id="mainCanvas" class="rounded-lg"></canvas>
-                <video id="cameraSource" autoplay muted playsinline class="camera-overlay-hidden"></video>
-                <video id="screenSource" autoplay muted playsinline class="camera-overlay-hidden"></video>
+<body class="p-6">
+    <div class="max-w-7xl mx-auto w-full flex flex-col h-full gap-6">
+        <!-- Main content area -->
+        <div class="flex-1 flex flex-col gap-6">
+            <!-- Canvas container -->
+            <div class="canvas-container">
+                <canvas id="mainCanvas"></canvas>
+                <video id="screenSource" autoplay playsinline></video>
+                <video id="cameraSource" autoplay playsinline></video>
             </div>
 
-            <!-- Audio Controls -->
-            <div class="flex flex-col sm:flex-row justify-center gap-6 mb-4 items-center">
-                <label class="flex items-center gap-2 cursor-pointer select-none hover:text-blue-600 transition-colors">
-                    <input type="checkbox" id="micAudioToggle" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500" checked>
-                    <span class="text-base text-gray-800">Include Microphone Audio</span>
-                </label>
-                <label class="flex items-center gap-2 cursor-pointer select-none hover:text-blue-600 transition-colors">
-                    <input type="checkbox" id="systemAudioToggle" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500" checked>
-                    <span class="text-base text-gray-800">Include System Audio</span>
-                </label>
+            <!-- Controls -->
+            <div class="flex items-center justify-center gap-4 bg-surface rounded-full p-4 mx-auto">
+                <!-- Audio controls -->
+                <div class="flex items-center gap-2 pr-4 border-r border-gray-700">
+                    <button id="micAudioToggle" class="control-button toggle-active" title="Toggle Microphone">
+                        <i data-lucide="mic" class="w-6 h-6"></i>
+                    </button>
+                    <button id="systemAudioToggle" class="control-button toggle-active" title="Toggle System Audio">
+                        <i data-lucide="speaker" class="w-6 h-6"></i>
+                    </button>
+                </div>
+
+                <!-- Camera controls -->
+                <div class="flex items-center gap-2 pr-4 border-r border-gray-700">
+                    <button id="cameraToggle" class="control-button toggle-inactive" title="Toggle Camera">
+                        <i data-lucide="video" class="w-6 h-6 camera-icon"></i>
+                        <i data-lucide="video-off" class="w-6 h-6 camera-off-icon hidden"></i>
+                    </button>
+                </div>
+
+                <!-- Recording controls -->
+                <div class="flex items-center gap-4">
+                    <button id="previewScreenButton" class="control-button" title="Preview Screen">
+                        <i data-lucide="monitor" class="w-6 h-6"></i>
+                    </button>
+                    <button id="recordButton" class="control-button" title="Start Recording">
+                        <i data-lucide="circle-dot" class="w-6 h-6 record-icon"></i>
+                        <i data-lucide="square" class="w-6 h-6 stop-icon hidden"></i>
+                    </button>
+                    <button id="saveButton" class="control-button" disabled title="Save Recording">
+                        <i data-lucide="save" class="w-6 h-6"></i>
+                    </button>
+                    <button id="settingsButton" class="control-button" title="Settings">
+                        <i data-lucide="settings" class="w-6 h-6"></i>
+                    </button>
+                </div>
             </div>
 
-            <!-- Recording Controls -->
-            <div class="controls flex flex-col sm:flex-row justify-center gap-4 mb-6">
-                <button id="previewScreenButton" class="px-8 py-3 rounded-full font-bold text-lg text-white bg-yellow-500 hover:bg-yellow-600 focus:outline-none focus:ring-4 focus:ring-yellow-300 transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-                    Preview Screen
-                </button>
-                <button id="startButton" class="px-8 py-3 rounded-full font-bold text-lg text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-300 transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-                    Start Recording
-                </button>
-                <button id="stopButton" disabled class="px-8 py-3 rounded-full font-bold text-lg text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-4 focus:ring-red-300 transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:shadow-none disabled:transform-none">
-                    Stop Recording
-                </button>
-                <button id="saveButton" disabled class="px-8 py-3 rounded-full font-bold text-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:shadow-none disabled:transform-none">
-                    Save Recording
-                </button>
+            <!-- Settings Popover -->
+            <div id="settingsPopover" class="hidden fixed bottom-24 left-1/2 transform -translate-x-1/2 w-72 bg-surface rounded-lg shadow-lg border border-gray-700 py-2 z-50">
+                <div class="px-4 py-2 border-b border-gray-700">
+                    <h3 class="text-sm font-semibold text-white">Camera Effects</h3>
+                </div>
+                <div class="px-4 py-2 space-y-4">
+                    <!-- Drop Shadow Toggle -->
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="dropShadowToggle" class="form-checkbox" checked>
+                        <label for="dropShadowToggle" class="text-sm text-gray-300 cursor-pointer flex-1">Drop Shadow</label>
+                        <div class="custom-checkbox checked">
+                            <i data-lucide="check" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+
+                    <!-- Stroke Toggle -->
+                    <div class="space-y-3">
+                        <div class="checkbox-wrapper">
+                            <input type="checkbox" id="strokeToggle" class="form-checkbox" checked>
+                            <label for="strokeToggle" class="text-sm text-gray-300 cursor-pointer flex-1">Stroke</label>
+                            <div class="custom-checkbox checked">
+                                <i data-lucide="check" class="w-4 h-4 text-white"></i>
+                            </div>
+                        </div>
+                        
+                        <!-- Stroke Width Slider (shown when stroke is enabled) -->
+                        <div id="strokeWidthContainer" class="pl-8 space-y-2">
+                            <div class="flex justify-between items-center">
+                                <label for="strokeWidth" class="text-sm text-gray-300">Width</label>
+                                <span id="strokeWidthValue" class="text-sm text-gray-300">2px</span>
+                            </div>
+                            <input type="range" id="strokeWidth" 
+                                min="1" max="10" value="2" step="1"
+                                class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                        </div>
+
+                        <!-- Stroke Color Picker (shown when stroke is enabled) -->
+                        <div id="strokeColorContainer" class="pl-8 space-y-2">
+                            <label for="strokeColor" class="text-sm text-gray-300">Color</label>
+                            <div class="flex items-center space-x-2">
+                                <input type="color" id="strokeColor" 
+                                    value="#FFFFFF"
+                                    class="w-8 h-8 rounded cursor-pointer border border-gray-600">
+                                <span id="strokeColorValue" class="text-sm text-gray-300">#FFFFFF</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pulse Effect Toggle -->
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="pulseEffectToggle" class="form-checkbox">
+                        <label for="pulseEffectToggle" class="text-sm text-gray-300 cursor-pointer flex-1">Pulse Effect</label>
+                        <div class="custom-checkbox">
+                            <i data-lucide="check" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Status Message -->
-            <p id="statusMessage" class="status-message mt-6 p-4 rounded-lg text-base font-medium transition-colors duration-300 ease-in-out bg-blue-100 text-blue-800 border border-blue-200">
-                Click "Preview Screen" to begin.
-            </p>
-
-            <!-- Help Information -->
-            <div class="explanation mt-8 p-5 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg text-sm text-left shadow-sm">
-                <strong class="text-yellow-900 text-base">Important Notes:</strong>
-                <ul class="list-disc list-inside mt-2 space-y-1">
-                    <li>This application creates a live preview on the canvas, combining your screen and camera.</li>
-                    <li>The saved video file will be a recording of this canvas output (including the circular camera overlay).</li>
-                    <li>The output format will be <strong>.webm</strong>.</li>
-                    <li>Audio from both your screen (system audio) and camera (microphone audio) will be included. Depending on your browser and media player, these might appear as separate audio tracks or be mixed.</li>
-                    <li>Performance can vary based on your system's capabilities due to real-time video processing.</li>
-                    <li>Please grant permissions for screen sharing and camera/microphone access when prompted.</li>
-                </ul>
+            <!-- Notification -->
+            <div id="notification" class="notification">
+                <div class="notification-content">
+                    <i data-lucide="info" class="notification-icon"></i>
+                    <p class="notification-message"></p>
+                </div>
+                <button class="notification-close" title="Close notification">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
             </div>
-        </main>
-
-        <footer class="mt-8 text-sm text-gray-600">
-            <p>Beam Stream - A modern web-based screen recording application</p>
-            <p class="mt-1">Built with ❤️ using modern web technologies</p>
-        </footer>
+        </div>
     </div>
 
-    <!-- Application Scripts -->
     <script type="module">
         import { ScreenRecorderApp } from './src/js/app.js';
 
-        // Initialize the application when the DOM is loaded
         document.addEventListener('DOMContentLoaded', () => {
             try {
+                // Initialize Lucide icons
+                lucide.createIcons();
+                
+                // Notification management
+                const notification = document.getElementById('notification');
+                const notificationMessage = notification.querySelector('.notification-message');
+                const notificationIcon = notification.querySelector('.notification-icon');
+                const closeButton = notification.querySelector('.notification-close');
+                let notificationTimeout = null;
+
+                const showNotification = (message, type = 'info', duration = 10000) => {
+                    // Clear any existing timeout
+                    if (notificationTimeout) {
+                        clearTimeout(notificationTimeout);
+                    }
+
+                    // Update notification content
+                    notificationMessage.textContent = message;
+                    
+                    // Update icon based on type
+                    const iconMap = {
+                        success: 'check-circle',
+                        error: 'alert-circle',
+                        info: 'info'
+                    };
+                    notificationIcon.setAttribute('data-lucide', iconMap[type] || 'info');
+                    lucide.createIcons();
+
+                    // Update notification type
+                    notification.className = 'notification';
+                    notification.classList.add(type);
+                    notification.classList.add('show');
+
+                    // Set auto-dismiss timeout
+                    notificationTimeout = setTimeout(() => {
+                        hideNotification();
+                    }, duration);
+                };
+
+                const hideNotification = () => {
+                    notification.classList.remove('show');
+                    if (notificationTimeout) {
+                        clearTimeout(notificationTimeout);
+                        notificationTimeout = null;
+                    }
+                };
+
+                // Close button handler
+                closeButton.addEventListener('click', hideNotification);
+
+                // Make notification available globally
+                window.showNotification = showNotification;
+                
+                // Handle settings popover visibility and toggles
+                const settingsButton = document.getElementById('settingsButton');
+                const settingsPopover = document.getElementById('settingsPopover');
+                const dropShadowToggle = document.getElementById('dropShadowToggle');
+                const strokeToggle = document.getElementById('strokeToggle');
+                const pulseEffectToggle = document.getElementById('pulseEffectToggle');
+                const strokeWidthContainer = document.getElementById('strokeWidthContainer');
+                const strokeColorContainer = document.getElementById('strokeColorContainer');
+                const strokeWidth = document.getElementById('strokeWidth');
+                const strokeWidthValue = document.getElementById('strokeWidthValue');
+                const strokeColor = document.getElementById('strokeColor');
+                const strokeColorValue = document.getElementById('strokeColorValue');
+
+                // Function to update checkbox UI
+                const updateCheckboxUI = (checkbox, customCheckbox) => {
+                    if (checkbox.checked) {
+                        customCheckbox.classList.add('checked');
+                    } else {
+                        customCheckbox.classList.remove('checked');
+                    }
+                };
+
+                // Initialize checkbox states
+                [dropShadowToggle, strokeToggle, pulseEffectToggle].forEach(checkbox => {
+                    const customCheckbox = checkbox.nextElementSibling.nextElementSibling;
+                    updateCheckboxUI(checkbox, customCheckbox);
+
+                    // Add click handler to the wrapper
+                    const wrapper = checkbox.closest('.checkbox-wrapper');
+                    wrapper.addEventListener('click', (e) => {
+                        if (e.target !== checkbox) {
+                            checkbox.checked = !checkbox.checked;
+                            updateCheckboxUI(checkbox, customCheckbox);
+                            document.dispatchEvent(new CustomEvent('settingsChange', {
+                                detail: { setting: checkbox.id.replace('Toggle', '').toLowerCase(), value: checkbox.checked }
+                            }));
+                        }
+                    });
+                });
+                
+                // Show/hide stroke options based on toggle state
+                const updateStrokeOptions = () => {
+                    const isEnabled = strokeToggle.checked;
+                    strokeWidthContainer.style.display = isEnabled ? 'block' : 'none';
+                    strokeColorContainer.style.display = isEnabled ? 'block' : 'none';
+                };
+                
+                // Update stroke width display
+                strokeWidth.addEventListener('input', (e) => {
+                    const value = e.target.value;
+                    strokeWidthValue.textContent = `${value}px`;
+                    document.dispatchEvent(new CustomEvent('settingsChange', {
+                        detail: { setting: 'strokeWidth', value: parseInt(value) }
+                    }));
+                });
+                
+                // Update stroke color display
+                strokeColor.addEventListener('input', (e) => {
+                    const value = e.target.value;
+                    strokeColorValue.textContent = value.toUpperCase();
+                    document.dispatchEvent(new CustomEvent('settingsChange', {
+                        detail: { setting: 'strokeColor', value }
+                    }));
+                });
+                
+                // Initialize stroke options visibility
+                updateStrokeOptions();
+                
+                // Toggle settings popover
+                settingsButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    settingsPopover.classList.toggle('hidden');
+                });
+
+                // Close popover when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!settingsPopover.contains(e.target) && e.target !== settingsButton) {
+                        settingsPopover.classList.add('hidden');
+                    }
+                });
+
+                // Handle toggle button states
+                const toggleButtons = document.querySelectorAll('#micAudioToggle, #systemAudioToggle');
+                toggleButtons.forEach(button => {
+                    button.addEventListener('click', () => {
+                        const isActive = button.classList.contains('toggle-active');
+                        button.classList.toggle('toggle-active', !isActive);
+                        button.classList.toggle('toggle-inactive', isActive);
+                        
+                        // Dispatch settings change event
+                        const setting = button.id === 'micAudioToggle' ? 'mic' : 'systemAudio';
+                        document.dispatchEvent(new CustomEvent('settingsChange', {
+                            detail: { setting, value: !isActive }
+                        }));
+                    });
+                });
+                
                 const app = new ScreenRecorderApp();
                 
-                // Clean up when the page is unloaded
-                window.addEventListener('beforeunload', () => {
+                // Cleanup on page unload
+                window.addEventListener('unload', () => {
                     app.cleanup();
+                    if (notificationTimeout) {
+                        clearTimeout(notificationTimeout);
+                    }
+                });
+
+                // Handle camera toggle
+                const cameraToggle = document.getElementById('cameraToggle');
+                const cameraIcon = cameraToggle.querySelector('.camera-icon');
+                const cameraOffIcon = cameraToggle.querySelector('.camera-off-icon');
+                let isCameraEnabled = false;
+
+                cameraToggle.addEventListener('click', () => {
+                    if (isCameraEnabled) {
+                        // Disable camera
+                        cameraIcon.classList.add('hidden');
+                        cameraOffIcon.classList.remove('hidden');
+                        cameraToggle.classList.remove('toggle-active');
+                        cameraToggle.classList.add('toggle-inactive');
+                        document.dispatchEvent(new CustomEvent('cameraStateChanged', {
+                            detail: { enabled: false }
+                        }));
+                        window.showNotification('Camera disabled', 'info');
+                    } else {
+                        // Enable camera
+                        cameraIcon.classList.remove('hidden');
+                        cameraOffIcon.classList.add('hidden');
+                        cameraToggle.classList.remove('toggle-inactive');
+                        cameraToggle.classList.add('toggle-active');
+                        document.dispatchEvent(new CustomEvent('cameraStateChanged', {
+                            detail: { enabled: true }
+                        }));
+                        window.showNotification('Camera enabled', 'success');
+                    }
+                    isCameraEnabled = !isCameraEnabled;
+                });
+
+                // Handle record button icon toggle
+                const recordButton = document.getElementById('recordButton');
+                const recordIcon = recordButton.querySelector('.record-icon');
+                const stopIcon = recordButton.querySelector('.stop-icon');
+
+                document.addEventListener('recordingStateChanged', (event) => {
+                    const { isRecording } = event.detail;
+                    if (isRecording) {
+                        recordIcon.classList.add('hidden');
+                        stopIcon.classList.remove('hidden');
+                    } else {
+                        recordIcon.classList.remove('hidden');
+                        stopIcon.classList.add('hidden');
+                    }
                 });
             } catch (error) {
                 console.error('Failed to initialize application:', error);
-                document.getElementById('statusMessage').textContent = 
-                    `Failed to initialize: ${error.message}. Please try a different browser.`;
+                window.showNotification('Failed to initialize application. Please refresh the page.', 'error');
             }
         });
     </script>
